@@ -41,6 +41,8 @@ _STORAGE = "storage"
 _LOADS = "loads"
 _ARCS = "arcs"
 _LINES = "lines"
+_TRANSFORMERS = "transformers"
+_TRANSFORMER_CIRCUITS = "transformer_circuits"
 _LINKS = "links"
 _SERVICES = "services"
 _SERVICE_MEMBERS = "service_members"
@@ -144,6 +146,7 @@ KIND_BY_SIENNA_TYPE = {
     "HydroDispatch": "generator",
     "PowerLoad": "load",
     "Line": "line",
+    "TwoWindingTransformer": "transformer",
     "TwoTerminalGenericHVDCLine": "controllable_line",
     "EnergyReservoirStorage": "storage",
 }
@@ -206,6 +209,7 @@ def _build_container(
         _RESERVOIRS,
         _LOADS,
         _LINES,
+        _TRANSFORMERS,
         _LINKS,
         _SERVICES,
         _UNKNOWN,
@@ -213,6 +217,10 @@ def _build_container(
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]
+
+    # A TransformerCircuit states no name, so it owns no time series and no ext record.
+    for circuit in sections.get(_TRANSFORMER_CIRCUITS, []):
+        components.setdefault("TransformerCircuit", []).append(_build_injector(circuit))
 
     # Arcs are topology with no name, so they are not registered as time-series/ext owners.
     for arc in sections.get(_ARCS, []):

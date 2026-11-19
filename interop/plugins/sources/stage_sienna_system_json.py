@@ -36,6 +36,8 @@ from interop.plugins.shared.sienna_constants import (
     SiennaServiceAssociationCol,
     SiennaStagedAssociationCol,
     SiennaTable,
+    SiennaTransformerCircuitCol,
+    SiennaTwoWindingTransformerCol,
     SiennaUnitSystem,
     TimeSeriesAssociationCol,
 )
@@ -64,6 +66,25 @@ _STORAGE_TYPES = (SiennaComponent.ENERGY_RESERVOIR_STORAGE,)
 _LOAD_TYPES = (SiennaComponent.POWER_LOAD, SiennaComponent.INTERRUPTIBLE_POWER_LOAD)
 _LINE_TYPES = (SiennaComponent.LINE, SiennaComponent.MONITORED_LINE)
 _LINK_TYPES = (SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,)
+# A transformer names a circuit, and the circuit holds the electrical data, so one staged
+# row joins the two.
+_TRANSFORMER_TYPES = (
+    SiennaComponent.TWO_WINDING_TRANSFORMER,
+    SiennaComponent.TRANSFORMER_CIRCUIT,
+)
+# Every field a staged transformer row takes from its circuit.
+_TRANSFORMER_CIRCUIT_FIELDS: tuple[str, ...] = (
+    SiennaTransformerCircuitCol.AVAILABLE,
+    SiennaTransformerCircuitCol.ARC,
+    SiennaTransformerCircuitCol.R,
+    SiennaTransformerCircuitCol.X,
+    SiennaTransformerCircuitCol.TAP,
+    SiennaTransformerCircuitCol.RATING,
+    SiennaTransformerCircuitCol.POWER_UNITS,
+    SiennaTransformerCircuitCol.BASE_POWER,
+    SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY,
+    SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY,
+)
 _RESERVOIR_TYPES = (SiennaComponent.HYDRO_RESERVOIR,)
 # A reservoir series is a level or a flow, not a share of a capacity, so it stays as stated.
 _STATED_UNIT_OWNER_TYPES = frozenset(_RESERVOIR_TYPES)
@@ -78,6 +99,7 @@ _HELD_TYPES = frozenset(
         *_LOAD_TYPES,
         *_LINE_TYPES,
         *_LINK_TYPES,
+        *_TRANSFORMER_TYPES,
         *_RESERVOIR_TYPES,
     }
 )
@@ -196,6 +218,9 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     ]
     _stage_table(line_rows, None, SiennaTable.LINES, staging_dir, frames)
 
+    transformer_rows = _build_transformer_rows(components, arc_endpoints)
+    _stage_table(transformer_rows, None, SiennaTable.TRANSFORMERS, staging_dir, frames)
+
     link_rows = [
         _line_row(c, sienna_type, arc_endpoints)
         for sienna_type in _LINK_TYPES
@@ -294,6 +319,61 @@ def _build_attribute_owner_rows(
                 }
             )
     return rows
+
+
+def _build_transformer_rows(
+    components: dict[str, Any], arc_endpoints: dict[int, tuple[int, int]]
+) -> list[dict[str, Any]]:
+    """One row for each TwoWindingTransformer, holding the fields of the circuit it names.
+
+    A transformer whose circuit the document does not state keeps its row, with no circuit
+    field, so the step drops it with an event rather than the source losing it in silence.
+    """
+    circuits = {
+        circuit[SiennaTransformerCircuitCol.ID]: circuit
+        for circuit in components.get(SiennaComponent.TRANSFORMER_CIRCUIT, [])
+    }
+    return [
+        _build_transformer_row(
+            transformer,
+            circuits.get(transformer[SiennaTwoWindingTransformerCol.CIRCUIT]),
+            arc_endpoints,
+        )
+        for transformer in components.get(SiennaComponent.TWO_WINDING_TRANSFORMER, [])
+    ]
+
+
+def _build_transformer_row(
+    transformer: dict[str, Any],
+    circuit: dict[str, Any] | None,
+    arc_endpoints: dict[int, tuple[int, int]],
+) -> dict[str, Any]:
+    """Join one transformer to its circuit, and denormalise the Arc to bus0/bus1 ids.
+
+    Every column stands in every row, so a transformer with no circuit states nulls rather
+    than making the staged table a different shape.
+    """
+    stated = circuit or {}
+    bus0_id, bus1_id = _find_arc_endpoints(stated, arc_endpoints)
+    row = {field: stated.get(field) for field in _TRANSFORMER_CIRCUIT_FIELDS}
+    row[SIENNA_ID_COLUMN] = transformer[SiennaTwoWindingTransformerCol.ID]
+    row[SIENNA_NAME_COLUMN] = transformer[SiennaTwoWindingTransformerCol.NAME]
+    row[SiennaTwoWindingTransformerCol.CIRCUIT] = transformer[
+        SiennaTwoWindingTransformerCol.CIRCUIT
+    ]
+    row[SiennaTransformerCircuitCol.BUS0] = bus0_id
+    row[SiennaTransformerCircuitCol.BUS1] = bus1_id
+    return row
+
+
+def _find_arc_endpoints(
+    circuit: dict[str, Any], arc_endpoints: dict[int, tuple[int, int]]
+) -> tuple[int | None, int | None]:
+    """The two bus ids of the Arc a circuit names, or two nulls where it names none."""
+    arc_id = circuit.get(SiennaTransformerCircuitCol.ARC)
+    if arc_id is None:
+        return None, None
+    return arc_endpoints.get(arc_id, (None, None))
 
 
 def _line_row(

@@ -19,6 +19,8 @@ class SiennaTable:
     GENERATORS = "generators"
     STORAGE = "storage"
     LINES = "lines"
+    # Each TwoWindingTransformer, with the fields of the TransformerCircuit it names.
+    TRANSFORMERS = "transformers"
     LINKS = "links"
     RESERVOIRS = "reservoirs"
     # Each component of a type that no table above holds, by type and name.

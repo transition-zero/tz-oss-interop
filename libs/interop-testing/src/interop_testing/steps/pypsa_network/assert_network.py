@@ -22,6 +22,7 @@ from interop_testing.steps.pypsa_network._written_network import (
     PLURAL_FRAMES,
     STORAGE_UNIT,
     STORE,
+    TRANSFORMER,
     WrittenComponent,
     assert_component_count,
     assert_no_components,
@@ -263,6 +264,47 @@ def assert_line_not_active(path: str, name: str) -> None:
 @then(parsers.parse('the PyPSA network "{path}" line "{name}" is extendable'))
 def assert_line_extendable(path: str, name: str) -> None:
     WrittenComponent(path, LINE, name).assert_flag_set("s_nom_extendable")
+
+
+# ---------- Transformers ----------
+
+
+@then(parsers.parse('the PyPSA network "{path}" has {count:d} transformer'))
+@then(parsers.parse('the PyPSA network "{path}" has {count:d} transformers'))
+def assert_transformer_count(path: str, count: int) -> None:
+    assert_component_count(path, TRANSFORMER, count)
+
+
+@then(parsers.parse('the PyPSA network "{path}" has no transformer "{name}"'))
+def assert_network_has_no_transformer(path: str, name: str) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_absent()
+
+
+@then(parsers.parse('the PyPSA network "{path}" transformer "{name}" has bus0 "{bus}"'))
+def assert_transformer_bus0(path: str, name: str, bus: str) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_label("bus0", bus)
+
+
+@then(parsers.parse('the PyPSA network "{path}" transformer "{name}" has bus1 "{bus}"'))
+def assert_transformer_bus1(path: str, name: str, bus: str) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_label("bus1", bus)
+
+
+@then(
+    parsers.parse('the PyPSA network "{path}" transformer "{name}" attribute "{attr}" is {value:g}')
+)
+def assert_transformer_attribute(path: str, name: str, attr: str, value: float) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_close(attr, value)
+
+
+@then(parsers.parse('the PyPSA network "{path}" transformer "{name}" is not active'))
+def assert_transformer_not_active(path: str, name: str) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_flag_clear("active")
+
+
+@then(parsers.parse('the PyPSA network "{path}" transformer "{name}" is extendable'))
+def assert_transformer_extendable(path: str, name: str) -> None:
+    WrittenComponent(path, TRANSFORMER, name).assert_flag_set("s_nom_extendable")
 
 
 # ---------- Links ----------

@@ -54,6 +54,13 @@ def given_system_contains_bus(sienna_system_builder: SiennaSystemBuilder, name: 
     sienna_system_builder.add_bus(name)
 
 
+@given(parsers.parse('the system contains a bus "{name}" at {base_voltage:g} kV'))
+def given_system_contains_bus_at_voltage(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_voltage: float
+) -> None:
+    sienna_system_builder.add_bus(name, base_voltage=base_voltage)
+
+
 @given(parsers.parse('the system contains a load zone "{name}"'))
 def given_system_contains_load_zone(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_load_zone(name)
@@ -380,12 +387,20 @@ def given_system_contains_line_with_shunt(
 
 
 @given(
-    parsers.parse('the Line "{name}" has ext length {length:g} and num_parallel {num_parallel:g}')
+    parsers.parse(
+        'the {sienna_type} "{name}" has ext length {length:g} and num_parallel {num_parallel:g}'
+    )
 )
-def given_line_has_ext(
-    sienna_system_builder: SiennaSystemBuilder, name: str, length: float, num_parallel: float
+def given_component_has_ext_length(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    length: float,
+    num_parallel: float,
 ) -> None:
-    sienna_system_builder.add_ext("Line", name, {"length": length, "num_parallel": num_parallel})
+    sienna_system_builder.add_ext(
+        sienna_type, name, {"length": length, "num_parallel": num_parallel}
+    )
 
 
 @given(parsers.parse('the Line "{name}" is unavailable'))
@@ -417,6 +432,45 @@ def given_line_power_units(
 @given(parsers.parse('the Line "{name}" is extendable in ext'))
 def given_line_extendable_in_ext(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_ext("Line", name, {"s_nom_extendable": True})
+
+
+@given(
+    parsers.parse(
+        'the system contains a transformer "{name}" from "{from_bus}" to "{to_bus}" '
+        "with rating {rating:g} r {r:g} x {x:g}"
+    )
+)
+def given_system_contains_transformer(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    from_bus: str,
+    to_bus: str,
+    rating: float,
+    r: float,
+    x: float,
+) -> None:
+    sienna_system_builder.add_transformer(name, from_bus, to_bus, rating, r, x)
+
+
+@given(parsers.parse('the transformer "{name}" has tap {tap:g}'))
+def given_transformer_tap(
+    sienna_system_builder: SiennaSystemBuilder, name: str, tap: float
+) -> None:
+    sienna_system_builder.set_transformer_tap(name, tap)
+
+
+@given(parsers.parse('the transformer "{name}" names circuit {circuit_id:d}'))
+def given_transformer_names_circuit(
+    sienna_system_builder: SiennaSystemBuilder, name: str, circuit_id: int
+) -> None:
+    sienna_system_builder.set_transformer_circuit(name, circuit_id)
+
+
+@given(parsers.parse('the transformer "{name}" states power_units {power_units}'))
+def given_transformer_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_transformer_power_units(name, power_units)
 
 
 @given(parsers.parse('the HVDC line "{name}" is unavailable'))

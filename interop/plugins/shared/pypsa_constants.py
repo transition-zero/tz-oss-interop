@@ -215,6 +215,27 @@ class PyPSALineCol:
     FOM_COST = "fom_cost"
 
 
+class PyPSATransformerCol:
+    """PyPSA ``n.transformers`` attributes.
+
+    ``r`` and ``x`` are per unit of ``s_nom``, where the same values on a line are in ohms.
+    PyPSA states neither a carrier nor a length on a transformer, so a stated one of either
+    stays in the sidecar.
+    """
+
+    NAME = "name"
+    BUS0 = "bus0"
+    BUS1 = "bus1"
+    R = "r"
+    X = "x"
+    S_NOM = "s_nom"
+    TAP_RATIO = "tap_ratio"
+    NUM_PARALLEL = "num_parallel"
+    ACTIVE = "active"
+    S_NOM_EXTENDABLE = "s_nom_extendable"
+    S_NOM_MIN = "s_nom_min"
+
+
 class PyPSALinkCol:
     """PyPSA ``n.links`` attributes."""
 
@@ -469,6 +490,9 @@ PYPSA_LINE_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSALineCol.LENGTH: 0.0,
     PyPSALineCol.NUM_PARALLEL: 1.0,
 }
+PYPSA_TRANSFORMER_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSATransformerCol.NUM_PARALLEL: 1.0,
+}
 
 # Six places holds a per-unit factor down to a millionth of a component's own rating, which
 # is finer than any dispatch decision a solver makes.
@@ -483,7 +507,8 @@ UNROUNDED_OUTPUT_COLUMNS: tuple[str, ...] = (
 """Impedance is not a per-unit factor of a rating, so a fixed decimal place can erase it.
 
 A near-zero-impedance coupler states a reactance of a millionth of an ohm or less, and
-rounding it to zero leaves PyPSA building an admittance from one over nothing.
+rounding it to zero leaves PyPSA building an admittance from one over nothing. The same
+names cover a transformer, whose per-unit impedance is smaller still.
 """
 
 
@@ -495,6 +520,7 @@ class PyPSADestinationTable:
     STORAGE_UNITS = "storage_units"
     LOADS = "loads"
     LINES = "lines"
+    TRANSFORMERS = "transformers"
     LINKS = "links"
     TIME_SERIES_METADATA = "time_series_metadata"
     # A key of ``State.destination_time_series``: one row for each snapshot.
@@ -646,6 +672,20 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALineCol.V_ANG_MAX: pl.Float64,
     PyPSALineCol.S_NOM_EXTENDABLE: pl.Boolean,
     PyPSALineCol.S_NOM_MIN: pl.Float64,
+}
+
+TRANSFORMERS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    PyPSATransformerCol.NAME: pl.Utf8,
+    PyPSATransformerCol.BUS0: pl.Utf8,
+    PyPSATransformerCol.BUS1: pl.Utf8,
+    PyPSATransformerCol.R: pl.Float64,
+    PyPSATransformerCol.X: pl.Float64,
+    PyPSATransformerCol.S_NOM: pl.Float64,
+    PyPSATransformerCol.TAP_RATIO: pl.Float64,
+    PyPSATransformerCol.NUM_PARALLEL: pl.Float64,
+    PyPSATransformerCol.ACTIVE: pl.Boolean,
+    PyPSATransformerCol.S_NOM_EXTENDABLE: pl.Boolean,
+    PyPSATransformerCol.S_NOM_MIN: pl.Float64,
 }
 
 LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

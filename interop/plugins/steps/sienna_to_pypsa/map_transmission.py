@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -13,24 +13,31 @@ from interop.core.extensions import (
     ExtensionKind,
     ExtensionReader,
     LineExtension,
+    TransformerExtension,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_constants import (
     LINES_DESTINATION_SCHEMA,
     LINKS_DESTINATION_SCHEMA,
     PYPSA_LINE_DEFAULTS,
     PYPSA_LINK_DEFAULTS,
+    TRANSFORMERS_DESTINATION_SCHEMA,
     PyPSADestinationTable,
     PyPSALineCol,
     PyPSALinkCol,
+    PyPSATransformerCol,
 )
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_NAME_COLUMN,
     SiennaComponent,
     SiennaLineCol,
     SiennaLinkCol,
     SiennaStructField,
     SiennaTable,
+    SiennaTransformerCircuitCol,
+    SiennaTwoWindingTransformerCol,
     SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_hvdc_flow import HvdcFlowBounds, build_hvdc_flow_bounds
@@ -38,6 +45,7 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
     stage_companion_columns,
 )
+from interop.plugins.shared.sienna_pypsa_translations.constants import SIENNA_TO_PYPSA
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     LINE_CARRIED,
     LINE_MAPPED_FIELDS,
@@ -45,6 +53,8 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     LINK_MAPPED_FIELDS,
     LINK_P_MAX_PU,
     LINK_P_MIN_PU,
+    TRANSFORMER_CARRIED,
+    TRANSFORMER_MAPPED_FIELDS,
     record_carried_fields,
     record_carried_value,
 )
@@ -57,8 +67,17 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     reject_unsupported_parameter_units,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
-from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
-from interop.plugins.shared.translation_runner import filter_component
+from interop.plugins.shared.sienna_pypsa_translations.reporters import (
+    LineReporter,
+    LinkReporter,
+    TransformerReporter,
+)
+from interop.plugins.shared.translation_runner import (
+    SkipReport,
+    SkipRule,
+    drop_skipped,
+    filter_component,
+)
 from interop.plugins.steps.sienna_to_pypsa.split_links import LinkSplitter, add_reverse_series
 
 # The OSeMOSYS CapacityFactor of a line multiplies its static p_max_pu, which PyPSA's own
@@ -73,6 +92,55 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
 
 # The Sienna type of every link that this step maps.
 _LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+# The electrical data of a transformer sits on its circuit, so the events name that type.
+_CIRCUIT_TYPE = SiennaComponent.TRANSFORMER_CIRCUIT
+# The staged transformer row denormalises its Arc onto the two columns a line also uses.
+_BUS0 = SiennaTransformerCircuitCol.BUS0
+_BUS1 = SiennaTransformerCircuitCol.BUS1
+_TRANSFORMER_SKIP_RULES: tuple[SkipRule, ...] = (
+    SkipRule(
+        keep=pl.col(SiennaTransformerCircuitCol.ARC).is_not_null(),
+        report=SkipReport(
+            pipeline=SIENNA_TO_PYPSA,
+            framework=Framework.SIENNA,
+            component=SiennaComponent.TWO_WINDING_TRANSFORMER,
+            name_col=SIENNA_NAME_COLUMN,
+            reason="name a TransformerCircuit that the document does not state",
+            counted_noun="transformers",
+            note=(
+                "the document states no TransformerCircuit of this id, so the transformer "
+                "holds no impedance, no rating and no endpoints"
+            ),
+            attribute_col=SiennaTwoWindingTransformerCol.CIRCUIT,
+        ),
+    ),
+    SkipRule(
+        keep=express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
+        report=build_power_units_skip_report(
+            SiennaComponent.TRANSFORMER_CIRCUIT,
+            "transformers",
+            SIENNA_NAME_COLUMN,
+            SiennaUnitSystem.COMPONENT_BASE,
+        ),
+    ),
+    SkipRule(
+        keep=pl.col(SiennaTransformerCircuitCol.RATING) != 0.0,
+        report=SkipReport(
+            pipeline=SIENNA_TO_PYPSA,
+            framework=Framework.SIENNA,
+            component=SiennaComponent.TRANSFORMER_CIRCUIT,
+            name_col=SIENNA_NAME_COLUMN,
+            reason="state a rating of zero",
+            counted_noun="transformers",
+            note=(
+                "PyPSA states the impedance of a transformer per unit of its s_nom, and a "
+                "rating of zero gives an s_nom of zero, which no per-unit value divides by; "
+                "the transformer carries no power either way"
+            ),
+            attribute_col=SiennaTransformerCircuitCol.RATING,
+        ),
+    ),
+)
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line or a link.
 _DEFAULT_LENGTH = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.LENGTH])
@@ -228,6 +296,100 @@ def _reconstruct_link_power_limits(
     return _LinkPowerLimits(limit_max=limit_max, p_nom=p_nom, p_min_pu=p_min_pu, p_max_pu=p_max_pu)
 
 
+class _BusLookup(NamedTuple):
+    """The name and the nominal voltage of each bus, by the id a branch names it with."""
+
+    names: dict[int, str]
+    v_nom: dict[int, float]
+
+
+@dataclass(frozen=True)
+class _TransformerImpedance:
+    """The PyPSA rating and impedance recovered from a Sienna circuit's per-unit values."""
+
+    s_nom: float
+    r_per_unit: float
+    x_per_unit: float
+
+
+def _convert_transformer_impedance(
+    reporter: TransformerReporter, name: str, row: dict[str, Any]
+) -> _TransformerImpedance:
+    """Rebase the impedance from the circuit's base_power onto the s_nom PyPSA states it on.
+
+    Both bases share the voltage of the primary winding, so the voltage cancels and the ratio
+    of the two power bases is the whole conversion.
+    """
+    rating = float(row[SiennaTransformerCircuitCol.RATING])
+    base_power = float(row[SiennaTransformerCircuitCol.BASE_POWER])
+    s_nom = rating * base_power
+    # The rating is never zero here, because a skip rule drops a transformer that states one.
+    rebase = s_nom / base_power if base_power else 0.0
+    r_stated = float(row[SiennaTransformerCircuitCol.R])
+    x_stated = float(row[SiennaTransformerCircuitCol.X])
+    reporter.record_s_nom(name, rating, s_nom)
+    reporter.record_resistance(name, r_stated, r_stated * rebase)
+    reporter.record_reactance(name, x_stated, x_stated * rebase)
+    return _TransformerImpedance(
+        s_nom=s_nom, r_per_unit=r_stated * rebase, x_per_unit=x_stated * rebase
+    )
+
+
+def _report_base_voltages(
+    reporter: TransformerReporter, name: str, row: dict[str, Any], buses: _BusLookup
+) -> None:
+    """Record both base voltages, and each one that disagrees with the bus it belongs to."""
+    primary = float(row[SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY])
+    secondary = float(row[SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY])
+    reporter.record_base_voltages(name, primary, secondary)
+    windings = (
+        (SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, primary, row[_BUS0]),
+        (SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, secondary, row[_BUS1]),
+    )
+    for attribute, stated, bus_id in windings:
+        bus_v_nom = buses.v_nom.get(bus_id)
+        if bus_v_nom is not None and bus_v_nom != stated:
+            reporter.record_base_voltage_mismatch(name, attribute, stated, bus_v_nom)
+
+
+def _build_transformer_row(
+    reporter: TransformerReporter,
+    row: dict[str, Any],
+    buses: _BusLookup,
+    ext: TransformerExtension,
+) -> dict[str, Any]:
+    """One PyPSA transformer, from a Sienna transformer row and its sidecar record."""
+    name = row[SIENNA_NAME_COLUMN]
+    bus0 = buses.names[row[_BUS0]]
+    bus1 = buses.names[row[_BUS1]]
+    available = bool(row[SiennaTransformerCircuitCol.AVAILABLE])
+    tap = float(row[SiennaTransformerCircuitCol.TAP])
+    reporter.record_endpoints(name, row[SiennaTransformerCircuitCol.ARC], bus0, bus1)
+    reporter.record_available(name, available)
+    reporter.record_tap(name, tap)
+    impedance = _convert_transformer_impedance(reporter, name, row)
+    _report_base_voltages(reporter, name, row, buses)
+    record_carried_fields(reporter, _CIRCUIT_TYPE, ext, TRANSFORMER_CARRIED)
+    s_nom_min = extendable_floor(impedance.s_nom, ext.s_nom_extendable)
+    if s_nom_min is not None:
+        reporter.record_s_nom_min(name, float(row[SiennaTransformerCircuitCol.RATING]), s_nom_min)
+    return {
+        PyPSATransformerCol.NAME: name,
+        PyPSATransformerCol.BUS0: bus0,
+        PyPSATransformerCol.BUS1: bus1,
+        PyPSATransformerCol.R: impedance.r_per_unit,
+        PyPSATransformerCol.X: impedance.x_per_unit,
+        PyPSATransformerCol.S_NOM: impedance.s_nom,
+        PyPSATransformerCol.TAP_RATIO: tap,
+        PyPSATransformerCol.NUM_PARALLEL: ext.num_parallel
+        if ext.num_parallel is not None
+        else _DEFAULT_NUM_PARALLEL,
+        PyPSATransformerCol.ACTIVE: available,
+        PyPSATransformerCol.S_NOM_EXTENDABLE: ext.s_nom_extendable,
+        PyPSATransformerCol.S_NOM_MIN: s_nom_min,
+    }
+
+
 class SiennaToPypsaMapTransmission(TranslationStep):
     name: ClassVar[str] = "sienna_to_pypsa_map_transmission"
     params_schema: ClassVar[type[BaseModel] | None] = None
@@ -239,8 +401,33 @@ class SiennaToPypsaMapTransmission(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         bus_names = bus_id_to_name(state)
         self._map_lines(state, bus_names, bus_id_to_v_nom(state))
+        self._map_transformers(state, _BusLookup(bus_names, bus_id_to_v_nom(state)))
         self._map_links(state, bus_names)
         return state
+
+    def _map_transformers(self, state: State, buses: _BusLookup) -> None:
+        source = state.source_topology.get(SiennaTable.TRANSFORMERS)
+        if source is None:
+            return
+        extensions = self._extensions.read(TransformerExtension)
+        reporter = TransformerReporter(self._recorder)
+        supported = drop_skipped(source.collect(), _TRANSFORMER_SKIP_RULES, self._recorder)
+        rows = [
+            _build_transformer_row(
+                reporter,
+                row,
+                buses,
+                extensions.get_fields(row[SIENNA_NAME_COLUMN], TRANSFORMER_MAPPED_FIELDS),
+            )
+            for row in supported.iter_rows(named=True)
+        ]
+        if rows:
+            state.destination_tables[PyPSADestinationTable.TRANSFORMERS] = pl.DataFrame(
+                rows, schema=TRANSFORMERS_DESTINATION_SCHEMA
+            )
+        relay_records(
+            state, extensions, [row[PyPSATransformerCol.NAME] for row in rows], self._recorder
+        )
 
     def _map_lines(
         self, state: State, bus_names: dict[int, str], bus_v_nom: dict[int, float]
