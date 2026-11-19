@@ -108,7 +108,6 @@ plan. Refer to [Size](translation-from-osemosys-to-sienna.md#size).
 | [`AnnualEmissionLimit` of the first pollutant that covers the portfolio](#emission-limits--carboncaps-or-a-constraint-record) | One `CarbonCaps` for each year that states a limit |
 | [`AnnualEmissionLimit` of any other pollutant](#emission-limits--carboncaps-or-a-constraint-record) | A `constraint` record in `extensions.json` |
 | [A plant of the base system with the name of a candidate](#a-plant-that-already-runs--existingdevices-and-retirementpotential) | `ExistingDevices` and `RetirementPotential` on the candidate |
-| Each location of the base system | A `TopologyMapping` that names the buses of the area: one `<region>/<fuel>` bus for each electricity fuel at the location |
 | [`DiscountRate` and `units: currency_year`](#the-financial-data-of-the-portfolio) | `PortfolioFinancialData` |
 | Everything else | A component of the base system, or not translated |
 

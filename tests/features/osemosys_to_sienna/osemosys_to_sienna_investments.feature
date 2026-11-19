@@ -184,27 +184,6 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
       | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]                          |
 
-  Scenario: The TopologyMapping of an area names each bus of its location
-    The fuel ATELECLV is a second electricity fuel at AT, so the area AT holds two buses.
-    Given the otoole set "FUEL" holds "ATELEC ATELECLV DEELEC ATGAS"
-    And a file "user_mappings.yaml" containing the lines:
-      | line                                                                                                                         |
-      | osemosys: {                                                                                                                  |
-      | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                                             |
-      | objects: {                                                                                                                   |
-      | fuels: [                                                                                                                     |
-      | {match: "^(?P<country>[A-Z]{2})ELEC(LV)?$", carrier: electricity, location: "{country}"},                                    |
-      | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"}],                                                 |
-      | technologies: [                                                                                                              |
-      | {match: "GAS(CC\|NEW)$", category: gas-cc}, {match: "SOLAR$", category: solar}, {match: "BIO$", category: biomass}]}}       |
-      | carriers: [                                                                                                                  |
-      | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
-      | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]                          |
-    When I translate the otoole model to a Sienna investments portfolio
-    Then the pipeline exit code is 0
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 7 has "buses" set to ["R1/ATELEC", "R1/ATELECLV"]
-    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [7]
-
   Scenario: A candidate becomes a SupplyTechnology with its capacity limits of each year and the capital cost of the earliest year
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
@@ -213,7 +192,6 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "prime_mover_type" set to "CC"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "fuel" set to ["NATURAL_GAS"]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [6]
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 6 has "buses" set to ["R1/ATELEC"]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capacity_limits" set to {"2030.0": {"min": 0.0, "max": 1000.0}, "2035.0": {"min": 200.0}}
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capital_costs.capital_cost.function_data.proportional_term" set to 1000000.0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.fixed" set to 20000.0

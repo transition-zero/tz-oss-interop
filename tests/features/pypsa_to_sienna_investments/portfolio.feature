@@ -85,8 +85,7 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as JSON with 1 component of type "DemandRequirement"
     And the file "outputs/portfolio.json" parses as JSON with component "DemandRequirement" named "North_load" having "power_systems_type" set to "PowerLoad"
     And the file "outputs/portfolio.json" parses as JSON with component "DemandRequirement" named "North_load" having "region" set to [3]
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 3 has "buses" set to ["North_bus"]
-    And the file "decisions.md" contains "the buses of the base system that sit in this area"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "North_bus" having "area" set to 3
 
   Scenario: an existing plant of the same carrier is the technology's fleet
     A technology stands for more of what a carrier already runs, so the base system components

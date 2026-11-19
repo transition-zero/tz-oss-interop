@@ -15,6 +15,7 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import ALL_COMPONENTS
 from interop.plugins.shared.pypsa_sienna_investments_translations._associations import (
     build_association_rows,
 )
@@ -27,28 +28,38 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._existing impo
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     InvestmentsSource,
 )
-from interop.plugins.shared.pypsa_sienna_investments_translations._topology import (
-    AREA_NAME,
-    build_topology_mapping_translations,
-    build_topology_source_table,
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SiennaACBusCol,
+    SiennaComponent,
 )
-from interop.plugins.shared.sienna_constants import SIENNA_ID_COLUMN, SiennaComponent
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     EXISTING_DEVICES_DESTINATION_SCHEMA,
     RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA,
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE,
     SUPPLEMENTAL_ATTRIBUTE_ORDER,
-    TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
     SiennaSupplementalAttribute,
 )
 from interop.plugins.shared.translation_runner import Translation, apply_translations, finalise
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 Schema = dict[str, pl.DataType | type[pl.DataType]]
 # The translations of one table, with ids from the first id that the table takes.
 BuildTranslations = Callable[[int], list[Translation]]
 
 _FIRST_ID = 1
+
+# SiennaSchemas 0.2 holds no attribute for the buses of an area, and the base system states
+# the area of each ACBus, so the map is already in the document the same run writes.
+_AREA_BUSES_EVENT = TranslationEvent(
+    kind=EventKind.NOT_MAPPED,
+    destinations=[
+        build_sienna_field(SiennaComponent.AREA, ALL_COMPONENTS, attribute=SiennaACBusCol.NAME)
+    ],
+    note="SiennaSchemas 0.2 states the buses of an area nowhere; read ACBus.area instead",
+)
 
 
 class PortfolioTable(NamedTuple):
@@ -92,24 +103,18 @@ class PortfolioMapper:
         self._next_id += out.height
         return out
 
-    def map_supplemental_attributes(
-        self, state: State, fleet: pl.DataFrame, buses: pl.DataFrame
-    ) -> None:
-        """The three attributes and their associations, numbered from the attribute counter.
+    def map_supplemental_attributes(self, state: State, fleet: pl.DataFrame) -> None:
+        """The two attributes and their associations, numbered from the attribute counter.
 
-        `fleet` holds the existing fleet of each technology, and `buses` the base system buses.
+        `fleet` holds the existing fleet of each technology.
         """
         attributes = PortfolioMapper(self._recorder, self._fleet_source)
-        sources = {
-            SiennaSupplementalAttribute.EXISTING_DEVICES: fleet,
-            SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: fleet,
-            SiennaSupplementalAttribute.TOPOLOGY_MAPPING: build_topology_source_table(buses),
-        }
         specs = _build_attributes(self._fleet_source)
         mapped = [
-            attributes._map_attribute(state, sources[kind], specs[kind])
+            attributes._map_attribute(state, fleet, specs[kind])
             for kind in SUPPLEMENTAL_ATTRIBUTE_ORDER
         ]
+        self._recorder.append(_AREA_BUSES_EVENT)
         associations = [rows for rows in mapped if rows is not None]
         state.destination_tables[SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE] = (
             pl.concat(associations)
@@ -157,22 +162,8 @@ def _build_attributes(
             name_col=TECHNOLOGY_NAME,
             describes=_list_technology_types,
         ),
-        SiennaSupplementalAttribute.TOPOLOGY_MAPPING: _Attribute(
-            SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
-            PortfolioTable(
-                SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
-                TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
-                build_topology_mapping_translations,
-            ),
-            name_col=AREA_NAME,
-            describes=_list_areas,
-        ),
     }
 
 
 def _list_technology_types(source: pl.DataFrame) -> list[str]:
     return source[TECHNOLOGY_TYPE].to_list()
-
-
-def _list_areas(source: pl.DataFrame) -> list[str]:
-    return [str(SiennaComponent.AREA)] * source.height

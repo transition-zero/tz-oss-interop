@@ -440,7 +440,7 @@ Feature: PLEXOS to Sienna, in one hop
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 component of type "LoadZone"
     And the written Sienna system puts bus "North_Node" in load zone "Coast"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "South_Node" having "load_zone" set to null
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "South_Node" without field "load_zone"
     And every "LoadZone" component in the written Sienna system is valid SiennaSchemas 0.2
     And the written Sienna system is a valid SiennaSchemas 0.2 document
     And the component ids in the written Sienna system are unique
