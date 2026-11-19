@@ -17,6 +17,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
     SIENNA_NAME_COLUMN,
     SiennaComponent,
     SiennaGeneratorCol,
@@ -66,10 +67,15 @@ def report_unheld(state: State, recorder: ScopedRecorder) -> None:
 def _report_other_components(state: State, reporter: UnheldReporter) -> None:
     rows = _list_rows(state, SiennaTable.OTHER_COMPONENTS, SiennaGeneratorCol.SIENNA_TYPE)
     for sienna_type, group in groupby(rows, key=lambda row: row[SiennaGeneratorCol.SIENNA_TYPE]):
-        names = [row[SIENNA_NAME_COLUMN] for row in group]
+        names = [_name_or_id(row) for row in group]
         for name in names:
             reporter.record_component_skipped(sienna_type, name)
         log.warning(_COMPONENT_WARNING, len(names), sienna_type, name_a_few(sorted(names)))
+
+
+def _name_or_id(row: dict[str, Any]) -> str:
+    """How the report names one component, which SiennaSchemas gives no name to some types."""
+    return row[SIENNA_NAME_COLUMN] or str(row[SIENNA_ID_COLUMN])
 
 
 def _report_reservoirs(state: State, reporter: UnheldReporter) -> None:
