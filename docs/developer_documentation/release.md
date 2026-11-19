@@ -19,7 +19,7 @@ never disagree, and no bump commit comes before a release.
 
 ```bash
 git switch main && git pull
-git tag v0.2.0
+git tag -a v0.2.0 -m v0.2.0
 git push origin v0.2.0
 ```
 
@@ -34,7 +34,7 @@ The workflow then runs three jobs:
 Nothing reaches PyPI until the smoke passes and a person approves the `pypi`
 environment.
 
-## Write the tag as the version, with a `v` in front
+## Write the tag as the version, with a `v` in front, and annotate it
 
 The smoke compares the version in each built artefact with the tag minus its leading
 `v`, and the job fails when the two differ. So write the tag in the PEP 440 form of the
@@ -44,6 +44,20 @@ version:
 | --- | --- |
 | `v0.2.0` | `v0.2` |
 | `v0.2.0rc1` | `v0.2.0-rc1` |
+
+**Annotate every release tag**, with `git tag -a v0.2.0 -m v0.2.0` and not `git tag
+v0.2.0`. hatch-vcs reads `git describe`, which prefers an annotated tag over a
+lightweight one on the same commit. A rehearsal and its release often sit on one commit,
+and a mix of the two kinds then builds the wrong version:
+
+| The tags on the commit | `git describe` gives |
+| --- | --- |
+| annotated `v0.2.0rc1`, lightweight `v0.2.0` | `v0.2.0rc1`, which is wrong |
+| annotated `v0.2.0rc1`, annotated `v0.2.0` | `v0.2.0` |
+| lightweight `v0.2.0rc1`, lightweight `v0.2.0` | `v0.2.0` |
+
+The smoke catches the wrong case and fails the release, so this costs a failed job
+rather than a bad upload. Annotating both tags avoids it.
 
 ## How the version reaches each artefact
 
@@ -70,21 +84,29 @@ tag and on nothing else.
 There is no TestPyPI job. To rehearse a release, tag a pre-release and push it:
 
 ```bash
-git tag v0.2.0rc1
+git tag -a v0.2.0rc1 -m v0.2.0rc1
 git push origin v0.2.0rc1
 ```
 
-PEP 440 calls that a pre-release. A resolver passes over a pre-release while a stable
-release is available, whichever is newer, so a rehearsal of a later release reaches no
-consumer. A consumer that wants one asks for it: `--prerelease=allow` in uv, and `--pre`
+PEP 440 calls that a pre-release. A resolver takes the newest **stable** release that
+satisfies the request, so a consumer who can reach a stable release never gets the
+rehearsal. A consumer who wants one asks for it: `--prerelease=allow` in uv, and `--pre`
 in pip. The rehearsal proves the real publisher, the real environment and the real
 metadata.
 
-**Warning: the first rehearsal of a distribution is installable by anyone.** A resolver
-takes a pre-release when the distribution has no stable release at all. So between the
-push of `v0.1.2rc1` and the push of `v0.1.2`, `uv add tz-oss-interop` installs the
-rehearsal. Keep that window short, and do not rehearse a first release of a distribution
-that consumers already install from PyPI.
+**Warning: a rehearsal does reach a consumer in two cases.** Both were run against a
+local index holding a stable `0.1.0` and a pre-release `0.2.0rc1`:
+
+| The consumer | uv 0.11.7 | pip 26.3 |
+| --- | --- | --- |
+| asks for the distribution, no constraint | installs `0.1.0` | installs `0.1.0` |
+| asks for a range that only the pre-release satisfies | refuses, and names `--prerelease=allow` | **installs `0.2.0rc1`** |
+| asks for a distribution whose only release is a pre-release | **installs it** | **installs it** |
+
+So keep the window between the rehearsal tag and the release tag short. Do not rehearse
+the first release of a distribution that consumers already install from PyPI, and expect
+a consumer who pins a range ahead of your stable releases to pick the rehearsal up under
+pip.
 
 ## What the wheel smoke proves
 

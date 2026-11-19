@@ -126,13 +126,17 @@ proves the real pending publisher, the real environment and the real metadata. T
 needs its own registration and its own pending publisher, and it proves none of those
 three.
 
-A resolver passes over a pre-release while a stable release satisfies the request, so a
-rehearsal of a later release costs one unused version string. **The first rehearsal of a
-distribution is the exception, and it is installable by anyone.** A resolver takes a
-pre-release when the distribution has no stable release at all, so between the rehearsal
-tag and the release tag an ordinary `uv add tz-oss-interop` installs the rehearsal. That
-window is short, and neither distribution is on PyPI yet, so this does not change the
-decision. `docs/developer_documentation/release.md` carries the warning for the reader.
+A resolver takes the newest stable release that satisfies the request, so a consumer who
+can reach one never gets the rehearsal. Two cases break that, and both were run:
+
+- a distribution whose only release is a pre-release installs it, in uv and in pip;
+- a range that only a pre-release satisfies installs it under pip 26.3, while uv 0.11.7
+  refuses and names `--prerelease=allow`.
+
+Neither distribution is on PyPI yet, so this does not change the decision.
+`docs/developer_documentation/release.md` carries both cases for the reader, and the rule
+that every release tag is annotated, because `git describe` prefers an annotated tag over
+a lightweight one on the same commit.
 
 ### The release documentation
 
