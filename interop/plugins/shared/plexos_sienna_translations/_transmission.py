@@ -298,7 +298,12 @@ def _choose_reporter(
 
 
 def _stated_voltage_by_node(state: State) -> dict[str, float]:
-    """The Voltage each PLEXOS Node states, leaving out a Node that states none."""
+    """The Voltage each PLEXOS Node states, leaving out a Node that states none.
+
+    A model with no Node states no voltage, and the bus source table takes a Node table.
+    """
+    if state.source_topology.get(PlexosClass.NODE) is None:
+        return {}
     return {
         row[NODE_NAME]: row[NODE_VOLTAGE]
         for row in build_buses_source_table(state).iter_rows(named=True)
