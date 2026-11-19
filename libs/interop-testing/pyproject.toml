@@ -50,5 +50,12 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/interop_testing"]
 
+# `uv sync` reuses a cached wheel of this project when only the environment
+# changed, so a build that sets SETUPTOOLS_SCM_PRETEND_VERSION gets the version of
+# the previous build. The Dockerfile sets it, and keeps a persistent uv cache mount.
+# Setting `cache-keys` replaces the defaults, so `pyproject.toml` stays in the list.
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { env = "SETUPTOOLS_SCM_PRETEND_VERSION" }]
+
 [tool.uv.sources]
 tz-oss-interop = { workspace = true }
