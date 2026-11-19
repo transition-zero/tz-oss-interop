@@ -74,9 +74,17 @@ git tag v0.2.0rc1
 git push origin v0.2.0rc1
 ```
 
-PEP 440 calls that a pre-release, and neither uv nor pip resolves one unless a consumer
-asks for it with `--prerelease=allow`. The rehearsal costs one unused version string,
-and it proves the real publisher, the real environment and the real metadata.
+PEP 440 calls that a pre-release. A resolver passes over a pre-release while a stable
+release is available, whichever is newer, so a rehearsal of a later release reaches no
+consumer. A consumer that wants one asks for it: `--prerelease=allow` in uv, and `--pre`
+in pip. The rehearsal proves the real publisher, the real environment and the real
+metadata.
+
+**Warning: the first rehearsal of a distribution is installable by anyone.** A resolver
+takes a pre-release when the distribution has no stable release at all. So between the
+push of `v0.1.2rc1` and the push of `v0.1.2`, `uv add tz-oss-interop` installs the
+rehearsal. Keep that window short, and do not rehearse a first release of a distribution
+that consumers already install from PyPI.
 
 ## What the wheel smoke proves
 

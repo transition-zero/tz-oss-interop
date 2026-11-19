@@ -34,7 +34,10 @@ dependencies = [
     "xarray>=2026.9.0",
     "netcdf4>=1.7.5",
     "h5py>=3.16.0",
-    "infrastore>=0.14.1",
+    # 0.16.0 validates the time-series association rows against the SiennaSchemas
+    # 0.4 wire contract, and rejects the `initial_timestamp` form that 0.14 and
+    # 0.15 write, so a sidecar an older install wrote no longer reads back.
+    "infrastore>=0.14.1,<0.16",
     "h5netcdf>=1.8.1",
     "requests>=2.34.2",
     "scipy>=1.11",

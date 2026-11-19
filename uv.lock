@@ -2882,7 +2882,7 @@ requires-dist = [
     { name = "h5netcdf", specifier = ">=1.8.1" },
     { name = "h5py", specifier = ">=3.16.0" },
     { name = "humanize", specifier = ">=4.16.0" },
-    { name = "infrastore", specifier = ">=0.14.1" },
+    { name = "infrastore", specifier = ">=0.14.1,<0.16" },
     { name = "juliacall", specifier = ">=0.9.37" },
     { name = "netcdf4", specifier = ">=1.7.5" },
     { name = "pandas", specifier = ">=3.0.6" },

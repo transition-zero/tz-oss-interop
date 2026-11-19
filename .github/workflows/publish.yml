@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# The least every job needs. A job that needs more declares its own block, which
+# replaces this one rather than adding to it.
+permissions:
+  contents: read
+
 jobs:
   build-and-publish:
     name: Container image
@@ -179,12 +184,19 @@ jobs:
           mv dist/tz_oss_interop-* upload/library/
           ls -l upload/library upload/harness
 
+      # `skip-existing` passes over a file that PyPI already holds, so a release
+      # that failed between the two uploads finishes on a re-run instead of
+      # failing again on the library. It matches by filename and not by content,
+      # which is safe here: a re-run downloads the same artefacts that the smoke
+      # proved, so a skipped name is the file that was tested.
       - name: Publish tz-oss-interop
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: upload/library
+          skip-existing: true
 
       - name: Publish tz-oss-interop-testing
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: upload/harness
+          skip-existing: true

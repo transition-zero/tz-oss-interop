@@ -64,11 +64,24 @@ PyPI rejects a local segment, so the publish job stays on the tag trigger.
 contract is SiennaSchemas 0.2 and only that, and 0.3, 0.4 and 0.5 are all on PyPI, so the
 document shape did change. The upper bound says the contract in the metadata.
 
-`infrastore` becomes `>=0.14.1`, with no upper bound. This repository documents no
-infrastore format contract, the code reads time series through the package's API, and the
-package ships minor releases fast. An upper bound in a published library propagates to
-every consumer, and it keeps most of the fault that the exact pin has today. If a future
-`infrastore` breaks the readers, the floor goes up then.
+`infrastore` becomes `>=0.14.1,<0.16`. A floor alone was the first choice, on the
+reading that this repository documents no infrastore format contract. That reading is
+wrong, and a round trip between two installed releases proves it. `infrastore` 0.16.0
+validates each time-series association row against the SiennaSchemas 0.4 wire contract,
+and 0.17.0 against 0.5. Both reject the `initial_timestamp` form that 0.14.1 and 0.15.1
+write:
+
+```
+infrastore.InvalidParameterError: time_series_associations row 0 does not match the
+SiennaSchemas v0.5.0 wire contract: /initial_timestamp: "2030-01-01T00:00:00Z" does not
+match "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?$"
+```
+
+So `infrastore` is not an independent dependency. Its version selects a SiennaSchemas
+wire contract, and this repository's input contract is SiennaSchemas 0.2. With a floor
+alone, a fresh install resolves 0.16 or newer, and the `sienna-to-pypsa` leg then cannot
+read a sidecar that the `pypsa-to-sienna` leg wrote under an older install. The bound is
+`<0.16` and not `<0.15`, because 0.15.1 reads a 0.14.1 sidecar.
 
 Widening either floor to the current release is separate work.
 
