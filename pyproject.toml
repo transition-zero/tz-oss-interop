@@ -1,6 +1,6 @@
 [project]
-name = "interop"
-version = "0.1.0"
+name = "tz-oss-interop"
+dynamic = ["version"]
 requires-python = ">=3.11,<3.14"
 description = "Translation tooling for energy-system model formats."
 readme = "README.md"
@@ -34,14 +34,14 @@ dependencies = [
     "xarray>=2026.9.0",
     "netcdf4>=1.7.5",
     "h5py>=3.16.0",
-    "infrastore==0.14.1",
+    "infrastore>=0.14.1",
     "h5netcdf>=1.8.1",
     "requests>=2.34.2",
     "scipy>=1.11",
     "juliacall>=0.9.37",
     "pandas>=3.0.6",
     "pypsa>=1.4.0",
-    "power-openapi-models==0.2.0",
+    "power-openapi-models>=0.2.0,<0.3",
 ]
 
 [project.urls]
@@ -58,7 +58,10 @@ interop-lint-plugin-filesystem = "interop.lints.plugin_filesystem:main"
 
 [dependency-groups]
 dev = [
-    "interop-testing",
+    "tz-oss-interop-testing",
+    # The build backend of both packages. The dev group holds it so mypy can
+    # type-check `libs/interop-testing/hatch_build.py` against it.
+    "hatchling>=1.27",
     "pytest-cov>=5",
     "ruff>=0.16.5",
     "mypy>=2.3.1",
@@ -74,11 +77,16 @@ dev = [
 members = ["libs/*"]
 
 [tool.uv.sources]
-interop-testing = { workspace = true }
+tz-oss-interop-testing = { workspace = true }
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# A pushed `v*` tag is the only version source, so no commit sets a version and
+# the two distributions can never disagree.
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["interop"]
@@ -122,7 +130,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 bdd_features_base_dir = "tests/features"
 markers = [
-    "slow: tests with a steep per-mutant cost that outweighs their mutation-testing value (e.g. the subprocess install smoke); excluded from mutation runs via `pytest -m 'not slow'`.",
+    "slow: tests with a steep per-mutant cost that outweighs their mutation-testing value (e.g. the entry-point install smoke, which installs a plugin package into a fresh interpreter); excluded from mutation runs via `pytest -m 'not slow'`.",
     "fork_unsafe: tests that run a Polars compute. Polars' Rayon pool does not survive mutmut's fork() at any pool size, so scripts/run_mutmut.py re-execs the mutants these tests cover in a fresh interpreter. That re-exec is too steep for the CI mutation job, so these tests are also tagged slow (excluded from the default `not slow` run); `make mutation-full` widens the filter to `not slow or fork_unsafe` to run them locally.",
 ]
 

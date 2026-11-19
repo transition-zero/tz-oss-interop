@@ -419,30 +419,26 @@ Built-in plugins live in:
 
 The class structure is identical to the project-local examples above. Open a PR adding the file. The contracts under `[tool.importlinter]` and the plugin-contract lints (see below) will run in CI.
 
-## 4. Testing your plugins with `interop-testing`
+## 4. Testing your plugins with `tz-oss-interop-testing`
 
-`interop-testing` is a separate, optional package (`libs/interop-testing/`) publishing
-the harness this repo tests itself with, so a project that ships its own plugins can
-write BDD scenarios against them without copying anything:
+`tz-oss-interop-testing` is a separate, optional package (`libs/interop-testing/`)
+publishing the harness this repo tests itself with, so a project that ships its own
+plugins can write BDD scenarios against them without copying anything:
 
-```toml
-[dependency-groups]
-dev = ["interop", "interop-testing"]
-
-[tool.uv.sources]
-interop = { git = "https://github.com/transition-zero/tz-oss-interop", rev = "<sha>" }
-interop-testing = { git = "https://github.com/transition-zero/tz-oss-interop", subdirectory = "libs/interop-testing", rev = "<sha>" }
+```bash
+uv add --group dev "tz-oss-interop-testing"
 ```
 
-Declare **both**, from the same revision. `interop-testing` requires `interop`, but the
-name `interop` on PyPI belongs to an unrelated project (Illumina's InterOp), so a
-consumer that names only `interop-testing` resolves that dependency to the wrong
-package and fails at import with `No module named 'interop.adapters'`. Naming `interop`
-directly is what makes the source above apply to it. Pinning both to one revision also
-keeps them in lockstep, which matters because the assertion vocabulary describes
-interop's output formats.
+The harness requires `tz-oss-interop` at the exact version it was built with, because
+both distributions take their version from one git tag. So naming the harness alone is
+enough, and the two can never fall out of step.
 
-Put them in a dev group: `interop-testing` depends on `interop`, never the reverse, so
+Mind the names. The distributions are `tz-oss-interop` and `tz-oss-interop-testing`,
+and the import packages are `interop` and `interop_testing`. The name `interop` on PyPI
+belongs to an unrelated project, Illumina's InterOp, so `uv add interop` installs the
+wrong package and fails at import with `No module named 'interop.adapters'`.
+
+Put the harness in a dev group: it depends on `tz-oss-interop`, never the reverse, so
 it should never become a runtime dependency. It pulls in `pypsa`, `pandas`, `pytest`
 and `pytest-bdd`. Three things come with it.
 

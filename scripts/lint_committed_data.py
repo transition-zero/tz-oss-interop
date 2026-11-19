@@ -1,9 +1,10 @@
 """Keep data files out of the repository, so nothing here needs a publisher's permission.
 
-interop redistributes no model data. A network, a CSV of published figures or a solved
+tz-oss-interop redistributes no model data. A network, a CSV of published figures or a solved
 result committed here travels in the git history, the sdist and the container image, and
 it carries whatever terms its publisher set. A test gets its fixture from a builder in
-`interop-testing`, and a case study tells the reader where to download the model instead.
+`tz-oss-interop-testing`, and a case study tells the reader where to download the model
+instead.
 
 So a file in a data format fails this check unless it sits under an allowed directory.
 
@@ -78,7 +79,7 @@ def report(found: list[str]) -> None:
         print(path, file=sys.stderr)
     print("", file=sys.stderr)
     print(
-        "Build a test fixture with an interop-testing builder, or tell the reader where "
+        "Build a test fixture with a tz-oss-interop-testing builder, or tell the reader where "
         "to download the model. Where data really has to be committed, add its directory "
         "to ALLOWED_DIRECTORIES in scripts/lint_committed_data.py with the reason.",
         file=sys.stderr,

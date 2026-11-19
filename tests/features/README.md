@@ -27,8 +27,10 @@ markers, so `pytest -m "not slow"` (the default mutmut filter) excludes them.
 
 Two scenario groups are slow for the same reason but with different remedies:
 
-- The entry-point discovery scenario is a subprocess install smoke with no
-  mutation value, so it carries `@slow` alone and stays excluded everywhere.
+- The entry-point discovery scenario is the entry-point install smoke, with no
+  mutation value, so it carries `@slow` alone and stays excluded everywhere. It is
+  not the wheel smoke, which proves a built wheel on a release tag;
+  `docs/developer_documentation/release.md` covers that one.
 - Scenarios that run a Polars compute carry `@slow @fork_unsafe`, because a
   forked child that touches Polars deadlocks. `@fork_unsafe` tells
   `scripts/run_mutmut.py` to re-exec a fresh interpreter for the mutants they

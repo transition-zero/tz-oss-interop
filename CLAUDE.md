@@ -168,7 +168,11 @@ Keep `interop` where it is a Technical Name, which a reader must type or find as
 - the command `interop`;
 - the Python package `interop` and its paths, for example `interop/plugins/`;
 - the environment variables, for example `INTEROP_LOG_LEVEL`;
-- the package `interop-testing`.
+- the import package `interop_testing`, which the distribution
+  `tz-oss-interop-testing` holds.
+
+The two distributions on PyPI are `tz-oss-interop` and `tz-oss-interop-testing`. Name a
+distribution in full where a reader types it, for example in an install line.
 
 Where a document first gives the command, say that it is the command of tz-oss-interop, for
 example "The command of tz-oss-interop is `interop`."
@@ -236,6 +240,9 @@ above, and they are correct as they stand.
   all.
 - **A pydantic validator keeps `_validate_...`.** Pydantic calls it, and no reader calls
   it. `model_post_init` and every pydantic field name also keep their form.
+- **A hatchling metadata hook keeps `update`.** `libs/interop-testing/hatch_build.py`
+  implements `MetadataHookInterface.update`, which the build backend calls and no reader
+  calls.
 - **The shared utility surface keeps its names.**
   `interop/plugins/shared/translation_runner.py` publishes `Translation`, `make_events`,
   `apply_translations`, `filter_component`, `finalise`, `SkipReport` and `SkipRule`.
