@@ -106,8 +106,8 @@ def serialise_system_document(
         name=None,
         description=None,
         frequency=None,
-        components=contents.components,
-        supplemental_attributes=contents.supplemental_attributes,
+        components=build_stated_components(contents.components),
+        supplemental_attributes=build_stated_rows(contents.supplemental_attributes),
         supplemental_attribute_associations=[
             SupplementalAttributeAssociation.model_validate(row)
             for row in contents.supplemental_attribute_associations
@@ -166,8 +166,20 @@ def _is_valid(model: type[BaseModel], row: dict[str, Any]) -> bool:
 
 def serialise_portfolio_document(payload: dict[str, Any], indent: int) -> bytes:
     """The portfolio document as the SDK writes it: validated, stamped, with its keys sorted."""
-    document = PortfolioDocument(**payload)
+    document = PortfolioDocument(**{**payload, **_build_stated_parts(payload)})
     return _read_written(lambda target: write_portfolio_document(document, target, indent=indent))
+
+
+def _build_stated_parts(payload: dict[str, Any]) -> dict[str, Any]:
+    """The two raw-dict parts of a portfolio payload, with each null-valued key dropped."""
+    parts: dict[str, Any] = {}
+    components = payload.get(SiennaSchemasSystem.COMPONENTS)
+    if components is not None:
+        parts[SiennaSchemasSystem.COMPONENTS] = build_stated_components(components)
+    attributes = payload.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES)
+    if attributes is not None:
+        parts[SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES] = build_stated_rows(attributes)
+    return parts
 
 
 def _read_written(write: Callable[[Path], None]) -> bytes:
@@ -182,6 +194,16 @@ def _read_written(write: Callable[[Path], None]) -> bytes:
         return target.read_bytes()
 
 
+def build_stated_components(components: dict[str, Any]) -> dict[str, Any]:
+    """Each component row with its null-valued keys dropped, by component type."""
+    return {type_name: build_stated_rows(rows) for type_name, rows in components.items()}
+
+
+def build_stated_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each row with its null-valued keys dropped."""
+    return [drop_absent_fields(row) for row in rows]
+
+
 def drop_absent_fields(row: dict[str, Any]) -> dict[str, Any]:
     """The fields a row actually holds, at every depth of a nested struct.
 
@@ -189,12 +211,18 @@ def drop_absent_fields(row: dict[str, Any]) -> dict[str, Any]:
     to it rather than a null a consumer would have to read as one. A cost struct carries
     every variant's fields, so this is also what leaves a renewable technology's cost
     without the two a thermal one alone states.
+
+    A null element of a list stays, because dropping it would move each element after it.
     """
-    return {
-        key: drop_absent_fields(value) if isinstance(value, dict) else value
-        for key, value in row.items()
-        if value is not None
-    }
+    return {key: _drop_absent(value) for key, value in row.items() if value is not None}
+
+
+def _drop_absent(value: Any) -> Any:
+    if isinstance(value, dict):
+        return drop_absent_fields(value)
+    if isinstance(value, list):
+        return [_drop_absent(element) for element in value]
+    return value
 
 
 def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:

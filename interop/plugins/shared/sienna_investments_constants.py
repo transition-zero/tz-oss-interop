@@ -46,7 +46,6 @@ class SiennaSupplementalAttribute(StrEnum):
 
     EXISTING_DEVICES = "ExistingDevices"
     RETIREMENT_POTENTIAL = "RetirementPotential"
-    TOPOLOGY_MAPPING = "TopologyMapping"
 
 
 class PortfolioDocument:
@@ -224,11 +223,6 @@ class NamedYearField:
 
     NAME = "name"
     YEAR = "year"
-
-
-class SiennaTopologyMappingCol:
-    ID = "id"
-    BUSES = "buses"
 
 
 class SiennaPortfolioFinancialDataCol:
@@ -454,11 +448,6 @@ RETIREMENT_POTENTIAL_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataTyp
     SiennaRetirementPotentialCol.RETIREMENT_COST: IO_CURVE_DTYPE,
 }
 
-TOPOLOGY_MAPPING_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    SiennaTopologyMappingCol.ID: pl.Int64,
-    SiennaTopologyMappingCol.BUSES: pl.List(pl.Utf8),
-}
-
 PORTFOLIO_FINANCIAL_DATA_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaPortfolioFinancialDataCol.ID: pl.Int64,
     SiennaPortfolioFinancialDataCol.DISCOUNT_RATE: pl.Float64,
@@ -479,7 +468,6 @@ SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataT
 SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
     SiennaSupplementalAttribute.EXISTING_DEVICES,
     SiennaSupplementalAttribute.RETIREMENT_POTENTIAL,
-    SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
 )
 
 STAGED_EXISTING_DEVICES_TABLE = "staged_existing_devices"

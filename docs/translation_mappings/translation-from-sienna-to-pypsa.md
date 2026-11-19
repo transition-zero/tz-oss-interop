@@ -420,12 +420,51 @@ line. PyPSA holds one total for each. The translator adds the two ends together.
 A line with no `angle_limits` keeps PyPSA's unbounded default.
 
 The translator takes the `v_nom` of the `bus0` end only. A line whose two ends are at
-different voltages therefore gets a wrong impedance. Such a branch is a transformer, and
-this translator does not handle a transformer.
+different voltages therefore gets a wrong impedance. Such a branch is a transformer, which
+[the section below](#twowindingtransformer-and-transformercircuit--transformer) covers.
 
 Four fields come from the sidecar. A line that reaches the translator without a sidecar
 record gets `length = 0.0` and `num_parallel = 1.0`, and the report says nothing about
 either. Check the length of each line if you plan to use it.
+
+## `TwoWindingTransformer` and `TransformerCircuit` → `Transformer`
+
+A `TwoWindingTransformer` states its name, and the `TransformerCircuit` that its `circuit`
+field names holds the electrical data. The two become one PyPSA transformer.
+
+Both forms state the impedance per unit, over the same voltage base, so the conversion is
+the ratio of the two power bases alone. Sienna states it per unit of the `base_power` of the
+circuit. PyPSA states it per unit of `s_nom`. The voltage cancels, and no voltage enters the
+formula. A circuit states `power_units` as `COMPONENT_BASE` or leaves it out. A circuit that
+states another value is left out, and the report names it.
+
+| PyPSA field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `TwoWindingTransformer.name` | `direct` |
+| `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
+| `s_nom` | MVA | `rating` × `base_power` | `derived` |
+| `r` | per unit of `s_nom` | `r` × `s_nom` ÷ `base_power` | `derived` |
+| `x` | per unit of `s_nom` | `x` × `s_nom` ÷ `base_power` | `derived` |
+| `tap_ratio` | | `tap` | `direct` |
+| `active` | | `available` | `direct` |
+| `num_parallel` | | `extensions.num_parallel` of the `transformer` record. If absent, `1.0`. | `sidecar` or `default` |
+| `s_nom_extendable` | | `extensions.s_nom_extendable` of the `transformer` record | `sidecar` |
+| `s_nom_min` | MVA | `rating` × `base_power`, for an extendable transformer only. | `derived` |
+
+PyPSA takes the voltage of a transformer from its two buses, so `base_voltage_primary` and
+`base_voltage_secondary` have no PyPSA field. The report states both as not mapped. Where a
+stated base voltage disagrees with the `v_nom` of its bus, the report names that too, because
+the per-unit impedance then sits on a voltage base the network does not hold.
+
+PyPSA states neither a carrier nor a length on a transformer. A stated one of either travels
+on to the PyPSA sidecar, under the `transformer` kind.
+
+Two kinds of transformer are left out, and the report names each one:
+
+- a transformer whose `circuit` names a `TransformerCircuit` that the document does not state;
+- a transformer that states a rating of zero. PyPSA states the impedance per unit of `s_nom`,
+  and a rating of zero gives an `s_nom` of zero, which no per-unit value divides by. Such a
+  transformer carries no power either way.
 
 ## `TwoTerminalGenericHVDCLine` → `Link`
 
@@ -860,7 +899,6 @@ name one.
 | `Line.rating_b` and `.rating_c` | Nothing applies the emergency ratings. The dispatch can use the normal rating only. |
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
-| A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
 
 ### Parts that the report names

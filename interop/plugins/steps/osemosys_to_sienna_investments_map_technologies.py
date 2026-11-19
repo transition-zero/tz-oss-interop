@@ -135,7 +135,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._map_carbon_caps(state, plan, mapper, candidates)
         self._map_series(state, plan_years, candidates)
         fleet = build_fleet_table(state, plan, candidates.families)
-        mapper.map_supplemental_attributes(state, fleet, buses)
+        mapper.map_supplemental_attributes(state, fleet)
         self._map_extensions(state, plan_years[plan.base_year], candidates)
         self._map_financial_data(state, plan)
         return state

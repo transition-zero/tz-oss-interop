@@ -33,6 +33,7 @@ from interop.plugins.shared.translation_runner import (
 _BRANCH_COMPONENTS: tuple[str, ...] = (
     SiennaComponent.LINE,
     SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,
+    SiennaComponent.TRANSFORMER_CIRCUIT,
 )
 
 

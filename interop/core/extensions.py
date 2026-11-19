@@ -73,6 +73,9 @@ class ExtensionKind(StrEnum):
     # A branch with a set point: PyPSA Link; Sienna TwoTerminalGenericHVDCLine. PLEXOS has
     # no separate class for it.
     CONTROLLABLE_LINE = "controllable_line"
+    # A branch between two buses of different base voltage: PyPSA Transformer; Sienna
+    # TwoWindingTransformer and TransformerCircuit; PLEXOS states it as a Line.
+    TRANSFORMER = "transformer"
     STORAGE = "storage"  # PyPSA StorageUnit; Sienna EnergyReservoirStorage; PLEXOS Storage
     # PLEXOS Reserve; Sienna VariableReserve and ConstantReserve. PyPSA has none, which is
     # why the concept needs the sidecar to survive a hop through it.
@@ -221,6 +224,16 @@ class LineExtension(ExtensionRecord):
     # rating and angle_limits, so a length has no home there.
     length: float | None = None
     # PyPSA Line.num_parallel; PLEXOS states the same idea as Units. No Sienna field.
+    num_parallel: float | None = None
+    s_nom_extendable: bool | None = None  # PyPSA only
+
+
+class TransformerExtension(ExtensionRecord):
+    carrier: str | None = None  # PyPSA Transformer.carrier
+    # km. PLEXOS Length. A SiennaSchemas TransformerCircuit holds only its electrical data,
+    # so a length has no home there.
+    length: float | None = None
+    # PyPSA Transformer.num_parallel; PLEXOS states the same idea as Circuits.
     num_parallel: float | None = None
     s_nom_extendable: bool | None = None  # PyPSA only
 
@@ -385,6 +398,7 @@ class Extensions(BaseModel):
     load: list[LoadExtension] = []
     line: list[LineExtension] = []
     controllable_line: list[ControllableLineExtension] = []
+    transformer: list[TransformerExtension] = []
     storage: list[StorageExtension] = []
     reserve: list[ReserveExtension] = []
     constraint: list[ConstraintExtension] = []

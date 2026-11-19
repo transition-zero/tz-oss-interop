@@ -1,4 +1,4 @@
-"""PLEXOS Line -> Sienna Line or TwoTerminalGenericHVDCLine, as a sub-step."""
+"""PLEXOS Line -> a Sienna Line, transformer or TwoTerminalGenericHVDCLine, as a sub-step."""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ from interop.plugins.shared.plexos_sienna_translations import map_transmission
 from interop.plugins.shared.sienna_constants import (
     HVDC_DESTINATION_SCHEMA,
     LINES_DESTINATION_SCHEMA,
+    TRANSFORMER_CIRCUITS_DESTINATION_SCHEMA,
+    TWO_WINDING_TRANSFORMERS_DESTINATION_SCHEMA,
     SiennaComponent,
 )
 
 
 class PlexosToSiennaMapTransmission(TranslationStep):
-    """Writes one Sienna branch per PLEXOS Line, by whether the Line states impedance."""
+    """Writes the Sienna branch each PLEXOS Line becomes, by what the Line states."""
 
     name: ClassVar[str] = "plexos_to_sienna_map_transmission"
     params_schema: ClassVar[type[BaseModel] | None] = None
@@ -37,6 +39,13 @@ class PlexosToSiennaMapTransmission(TranslationStep):
             state.destination_tables[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = pl.DataFrame(
                 translated.links, schema=HVDC_DESTINATION_SCHEMA
             )
+        if translated.circuits:
+            state.destination_tables[SiennaComponent.TRANSFORMER_CIRCUIT] = pl.DataFrame(
+                translated.circuits, schema=TRANSFORMER_CIRCUITS_DESTINATION_SCHEMA
+            )
+            state.destination_tables[SiennaComponent.TWO_WINDING_TRANSFORMER] = pl.DataFrame(
+                translated.transformers, schema=TWO_WINDING_TRANSFORMERS_DESTINATION_SCHEMA
+            )
         append_extensions(
             state.destination_extensions, ExtensionKind.LINE, translated.line_extensions
         )
@@ -44,5 +53,10 @@ class PlexosToSiennaMapTransmission(TranslationStep):
             state.destination_extensions,
             ExtensionKind.CONTROLLABLE_LINE,
             translated.link_extensions,
+        )
+        append_extensions(
+            state.destination_extensions,
+            ExtensionKind.TRANSFORMER,
+            translated.transformer_extensions,
         )
         return state

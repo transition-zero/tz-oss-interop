@@ -28,7 +28,7 @@ The pipeline reads your model once and writes both documents. It runs the two st
 | [`Generator` that may be built](#generator-that-may-be-built--supplytechnology) | `SupplyTechnology` |
 | [`Battery` that may be built](#battery-or-pumped-storage-that-may-be-built--storagetechnology) | `StorageTechnology` |
 | [Pumped-storage turbine that may be built](#battery-or-pumped-storage-that-may-be-built--storagetechnology) | `StorageTechnology` |
-| [`Region`](#region--the-portfolios-regions) | The region each technology sits in, and a `TopologyMapping` naming its nodes |
+| [`Region`](#region--the-portfolios-regions) | The region each technology sits in |
 | [Region `Load`](#region-load--demandrequirement) | `DemandRequirement` |
 | [`Constraint`](#constraint--carboncaps) | `CarbonCaps`, but only where its members cover the whole model |
 | [A plant that already runs](#a-plant-that-already-runs--existingdevices-and-retirementpotential) | `ExistingDevices` and `RetirementPotential` on the technology of its carrier |
@@ -139,8 +139,9 @@ The portfolio does not hold its regions as components of its own: `aggregation` 
 system type they are, which is `Area`, and each technology's `region` is a list of `Area` ids
 in that system. Each `Region` of your model is one `Area` there.
 
-Each region also gets a `TopologyMapping`, a supplemental attribute holding the names of the
-nodes in it, so a consumer can place the region's technologies on the base system's buses.
+SiennaSchemas 0.2 holds no attribute for the buses of a region. The base system that the same
+run writes states the `area` of each `ACBus`, so a consumer reads the buses of a region from
+there.
 
 ## Region `Load` → `DemandRequirement`
 

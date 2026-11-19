@@ -19,6 +19,8 @@ class SiennaTable:
     GENERATORS = "generators"
     STORAGE = "storage"
     LINES = "lines"
+    # Each TwoWindingTransformer, with the fields of the TransformerCircuit it names.
+    TRANSFORMERS = "transformers"
     LINKS = "links"
     RESERVOIRS = "reservoirs"
     # Each component of a type that no table above holds, by type and name.
@@ -102,6 +104,8 @@ class SiennaComponent(StrEnum):
     LINE = "Line"
     MONITORED_LINE = "MonitoredLine"
     TWO_TERMINAL_GENERIC_HVDC_LINE = "TwoTerminalGenericHVDCLine"
+    TWO_WINDING_TRANSFORMER = "TwoWindingTransformer"
+    TRANSFORMER_CIRCUIT = "TransformerCircuit"
     ONLINE_RESERVE = "OnlineReserve"
     OFFLINE_RESERVE = "OfflineReserve"
 
@@ -311,6 +315,40 @@ class SiennaLineCol:
     BUS0 = "bus0"
     BUS1 = "bus1"
     SIENNA_TYPE = "sienna_type"
+
+
+class SiennaTwoWindingTransformerCol:
+    """Sienna TwoWindingTransformer column names.
+
+    The type holds the name alone. Its electrical data sits on the TransformerCircuit that
+    ``circuit`` names.
+    """
+
+    ID = "id"
+    NAME = "name"
+    CIRCUIT = "circuit"
+
+
+class SiennaTransformerCircuitCol:
+    """Sienna TransformerCircuit column names.
+
+    ``bus0``/``bus1`` hold the endpoint names, as a Line does, and the sink resolves them to
+    the shared Arc and drops them.
+    """
+
+    ID = "id"
+    AVAILABLE = "available"
+    ARC = "arc"
+    R = "r"
+    X = "x"
+    TAP = "tap"
+    RATING = "rating"
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
+    BASE_VOLTAGE_PRIMARY = "base_voltage_primary"
+    BASE_VOLTAGE_SECONDARY = "base_voltage_secondary"
+    BUS0 = "bus0"
+    BUS1 = "bus1"
 
 
 class SiennaLinkCol:
@@ -1240,6 +1278,28 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLinkCol.LOSS: LOSS_CURVE_DTYPE,
     SiennaLinkCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaLinkCol.BASE_POWER: pl.Float64,
+}
+
+TWO_WINDING_TRANSFORMERS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaTwoWindingTransformerCol.ID: pl.Int64,
+    SiennaTwoWindingTransformerCol.NAME: pl.Utf8,
+    SiennaTwoWindingTransformerCol.CIRCUIT: pl.Int64,
+}
+
+TRANSFORMER_CIRCUITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaTransformerCircuitCol.ID: pl.Int64,
+    SiennaTransformerCircuitCol.AVAILABLE: pl.Boolean,
+    # Endpoint names; the sink resolves these to the shared Arc and drops them.
+    SiennaTransformerCircuitCol.BUS0: pl.Utf8,
+    SiennaTransformerCircuitCol.BUS1: pl.Utf8,
+    SiennaTransformerCircuitCol.R: pl.Float64,
+    SiennaTransformerCircuitCol.X: pl.Float64,
+    SiennaTransformerCircuitCol.TAP: pl.Float64,
+    SiennaTransformerCircuitCol.RATING: pl.Float64,
+    SiennaTransformerCircuitCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaTransformerCircuitCol.BASE_POWER: pl.Float64,
+    SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY: pl.Float64,
+    SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY: pl.Float64,
 }
 
 
