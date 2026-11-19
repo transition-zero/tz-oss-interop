@@ -3,6 +3,7 @@ name = "tz-oss-interop-testing"
 dynamic = ["version", "dependencies"]
 requires-python = ">=3.11,<3.14"
 description = "Test harness for projects that build tz-oss-interop pipelines."
+readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "TransitionZero", email = "info@transitionzero.org" }]
