@@ -6,8 +6,10 @@ WORKDIR /app
 
 # Copy only what's needed to resolve dependencies first, so Docker's layer
 # cache can skip the (slow) dependency install when only application code
-# changes, not pyproject.toml/uv.lock.
-COPY pyproject.toml uv.lock ./
+# changes, not pyproject.toml/uv.lock. README.md travels with them because
+# pyproject.toml declares it as the readme, and hatchling reads it to build
+# the wheel below.
+COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev --frozen --no-install-project
 
