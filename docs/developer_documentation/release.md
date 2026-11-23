@@ -23,16 +23,19 @@ git tag -a v0.2.0 -m v0.2.0
 git push origin v0.2.0
 ```
 
-The workflow then runs three jobs:
+The workflow then runs these jobs:
 
-1. **Container image** builds the image and pushes it to GHCR under the tag as pushed.
-2. **Wheel smoke** builds both distributions and proves them, on the oldest and the
-   newest supported Python.
-3. **Publish to PyPI** waits for a reviewer, then uploads the library and then the
-   harness.
+1. **Wheel smoke** builds both distributions and proves them, on the oldest and the
+   newest supported Python. Everything below waits for it.
+2. **Container image** builds the image and pushes it to GHCR under the tag as pushed.
+3. **Publish tz-oss-interop** waits for a reviewer of the `pypi` environment, then
+   uploads the library.
+4. **Publish tz-oss-interop-testing** follows it, in the `pypi-testing` environment,
+   because the harness requires the library at the same version.
 
-Nothing reaches PyPI until the smoke passes and a person approves the `pypi`
-environment.
+Nothing reaches PyPI or GHCR until the smoke passes, and nothing reaches PyPI until a
+person approves the `pypi` environment. Only that one environment carries a reviewer: the
+harness job needs the library job, so one approval releases both.
 
 ## Write the tag as the version, with a `v` in front, and annotate it
 
@@ -149,14 +152,33 @@ anyone who pins that exact version, and it leaves every resolution that does not
 ## The one-time setup
 
 Each project name on PyPI needs a trusted publisher before its first upload can work.
+The upload authenticates over OIDC, so this repository holds no PyPI credential.
+
+**A pending publisher's configuration must be unique.** PyPI refuses a second pending
+publisher that names the same owner, repository, workflow file and environment as the
+first and differs only in the project name:
+
+> A pending trusted publisher matching this configuration has already been registered for
+> a different project name.
+
+So each distribution gets its own GitHub environment, and the workflow has one upload job
+per distribution:
+
+| Distribution | GitHub environment | Required reviewer |
+| --- | --- | --- |
+| `tz-oss-interop` | `pypi` | yes |
+| `tz-oss-interop-testing` | `pypi-testing` | no |
+
+Both publishers name this repository and the workflow file `publish.yml`, and differ only
+in the environment. The reviewer sits on `pypi` alone, because `publish-harness` needs
+`publish-library`, so one approval gates the whole release.
+
 A new distribution from this repository needs all three of these:
 
 - the project registered on PyPI, or a pending publisher that creates it on first upload;
-- the publisher naming this repository, the workflow file `publish.yml` and the GitHub
-  environment `pypi`;
-- the `pypi` environment in this repository's settings, with a required reviewer on it.
-
-The upload authenticates over OIDC, so this repository holds no PyPI credential.
+- the publisher naming this repository, `publish.yml` and an environment no other pending
+  publisher uses;
+- that environment in this repository's settings, and an upload job that declares it.
 
 ## Before the first release, move the consumers across
 

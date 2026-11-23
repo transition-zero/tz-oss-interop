@@ -156,12 +156,18 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # PyPI Trusted Publishing: the upload authenticates over OIDC, so this
-  # repository holds no long-lived PyPI credential, which matches the stance
-  # the container job above records. The `pypi` environment carries a required
-  # reviewer, so a pushed tag waits for a person before anything reaches PyPI.
-  publish-pypi:
-    name: Publish to PyPI
+  # PyPI Trusted Publishing: each upload authenticates over OIDC, so this
+  # repository holds no long-lived PyPI credential, which matches the stance the
+  # container job above records.
+  #
+  # One job per distribution, because PyPI requires a *pending* publisher's
+  # configuration to be unique. Two pending publishers cannot share one owner,
+  # repository, workflow and environment and differ only by project name, so the
+  # two distributions need an environment each. Only `pypi` carries the required
+  # reviewer: the harness job needs the library job, so approving the library
+  # releases both and a tag still cannot publish on its own.
+  publish-library:
+    name: Publish tz-oss-interop
     needs: smoke-wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -177,15 +183,13 @@ jobs:
           name: distributions
           path: dist/
 
-      # Two uploads, library first: tz-oss-interop-testing requires
-      # tz-oss-interop at the exact same version, so the library must be
-      # resolvable before the harness appears.
-      - name: Sort the artefacts into one directory per distribution
+      # The glob needs a hyphen after "interop", which the harness files do not
+      # have, so this takes the library's sdist and wheel and nothing else.
+      - name: Keep the library's artefacts alone
         run: |
-          mkdir -p upload/library upload/harness
-          mv dist/tz_oss_interop_testing-* upload/harness/
-          mv dist/tz_oss_interop-* upload/library/
-          ls -l upload/library upload/harness
+          mkdir -p upload
+          mv dist/tz_oss_interop-* upload/
+          ls -l upload
 
       # `skip-existing` passes over a file that PyPI already holds, so a release
       # that failed between the two uploads finishes on a re-run instead of
@@ -195,11 +199,36 @@ jobs:
       - name: Publish tz-oss-interop
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
-          packages-dir: upload/library
+          packages-dir: upload
           skip-existing: true
+
+  # The harness last: it requires tz-oss-interop at the exact same version, so
+  # the library must be resolvable before this appears.
+  publish-harness:
+    name: Publish tz-oss-interop-testing
+    needs: publish-library
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: pypi-testing
+      url: https://pypi.org/project/tz-oss-interop-testing/
+    permissions:
+      id-token: write
+    steps:
+      - name: Take the artefacts the smoke proved
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Keep the harness's artefacts alone
+        run: |
+          mkdir -p upload
+          mv dist/tz_oss_interop_testing-* upload/
+          ls -l upload
 
       - name: Publish tz-oss-interop-testing
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
-          packages-dir: upload/harness
+          packages-dir: upload
           skip-existing: true
