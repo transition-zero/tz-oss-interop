@@ -1,7 +1,7 @@
-"""Test harness for projects that build interop pipelines.
+"""Test harness for projects that build tz-oss-interop pipelines.
 
-Installed with the ``testing`` extra (``uv add "interop-testing"``). It
-publishes the fixture builders for every framework interop reads or writes, the
+Installed as the distribution ``tz-oss-interop-testing``. It publishes the
+fixture builders for every framework tz-oss-interop reads or writes, the
 helpers that scaffold a project directory, and a driver that runs one pipeline
 in-process. ``interop_testing.steps`` holds the matching pytest-bdd vocabulary,
 so a project can write ``.feature`` files against its own pipelines without
