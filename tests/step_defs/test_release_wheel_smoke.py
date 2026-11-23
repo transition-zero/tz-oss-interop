@@ -62,11 +62,6 @@ def when_read_templates(named_templates: tuple[str, ...]) -> str:
     return ""
 
 
-@when("the release smoke counts the files under templates", target_fixture="count")
-def when_count_templates() -> int:
-    return cast(int, smoke_wheel.count_templates(smoke_wheel.files("interop") / "templates"))
-
-
 @when(parsers.parse('the release smoke compares it with "{expected}"'), target_fixture="refusal")
 def when_compare_with(distribution: str, expected: str) -> str:
     return _compare(distribution, expected)
@@ -88,12 +83,6 @@ def _compare(distribution: str, expected: str) -> str:
 @then("each one is readable")
 def then_each_template_is_readable(refusal: str) -> None:
     assert not refusal, refusal
-
-
-@then("the count matches the files in the repository")
-def then_count_matches_repository(count: int) -> None:
-    on_disk = sum(1 for path in (REPOSITORY / "interop" / "templates").rglob("*") if path.is_file())
-    assert count == on_disk, f"the smoke counted {count} templates, the repository holds {on_disk}"
 
 
 @then("the comparison is refused")

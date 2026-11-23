@@ -10,11 +10,6 @@ Feature: the release smoke proves the built wheel before it reaches PyPI
     When the release smoke reads them from the installed package
     Then each one is readable
 
-  Scenario: the smoke counts every file under templates
-    Given the templates the release smoke names
-    When the release smoke counts the files under templates
-    Then the count matches the files in the repository
-
   Scenario Outline: a version that is not the tag fails the release
     Given the installed version of "<distribution>"
     When the release smoke compares it with "<expected>"

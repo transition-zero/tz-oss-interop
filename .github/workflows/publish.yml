@@ -13,6 +13,10 @@ permissions:
 jobs:
   build-and-publish:
     name: Container image
+    # The smoke gates the image as well as the upload. An image tag here is
+    # immutable, and the job below refuses to overwrite one, so a tag pushed
+    # from a broken build cannot be replaced.
+    needs: smoke-wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -175,8 +179,7 @@ jobs:
 
       # Two uploads, library first: tz-oss-interop-testing requires
       # tz-oss-interop at the exact same version, so the library must be
-      # resolvable before the harness appears. The harness files move first,
-      # because the library's glob also matches them.
+      # resolvable before the harness appears.
       - name: Sort the artefacts into one directory per distribution
         run: |
           mkdir -p upload/library upload/harness

@@ -37,13 +37,18 @@ environment.
 ## Write the tag as the version, with a `v` in front, and annotate it
 
 The smoke compares the version in each built artefact with the tag minus its leading
-`v`, and the job fails when the two differ. So write the tag in the PEP 440 form of the
-version:
+`v`, as PEP 440 versions, so it does not catch a tag in a non-canonical form: `v0.2`
+passes and publishes `0.2`. Write the tag in the canonical PEP 440 form of the version:
 
 | Write this | Not this |
 | --- | --- |
 | `v0.2.0` | `v0.2` |
 | `v0.2.0rc1` | `v0.2.0-rc1` |
+
+Neither form in the second column fails the job. `Version("0.2") == Version("0.2.0")`,
+and `Version("0.2.0-rc1")` normalises to `0.2.0rc1`, so each one builds and publishes.
+The column says what to avoid for the sake of one readable version string per release,
+and not what the smoke rejects.
 
 **Annotate every release tag**, with `git tag -a v0.2.0 -m v0.2.0` and not `git tag
 v0.2.0`. hatch-vcs reads `git describe`, which prefers an annotated tag over a
@@ -152,3 +157,16 @@ A new distribution from this repository needs all three of these:
 - the `pypi` environment in this repository's settings, with a required reviewer on it.
 
 The upload authenticates over OIDC, so this repository holds no PyPI credential.
+
+## Before the first release, move the consumers across
+
+The distributions were called `interop` and `interop-testing` until the first release, so
+anything that names the old distribution stops resolving once it points past the rename.
+Two consumers need a change in step with that release:
+
+- the closed-source repository that runs the batch job, which holds a git dependency on
+  this one;
+- any tool install, which uv registered under the old name.
+
+`docs/developer_documentation/extending.md` has the steps under "Moving from the
+`interop` distribution".

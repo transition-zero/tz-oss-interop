@@ -82,7 +82,7 @@ uv tool install tz-oss-interop
 
 If your shell does not find `interop`, run `uv tool update-shell`. Then open a new terminal.
 
-The distribution on PyPI is `tz-oss-interop`, and the command and the import package are both `interop`. Run `uv tool upgrade tz-oss-interop` to get a newer release. Run `uv tool uninstall tz-oss-interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on tz-oss-interop itself.
+The distribution on PyPI is `tz-oss-interop`, and the command and the import package are both `interop`. It was called `interop` before the first release; `docs/developer_documentation/extending.md` says how to move an existing install or git dependency across. Run `uv tool upgrade tz-oss-interop` to get a newer release. Run `uv tool uninstall tz-oss-interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on tz-oss-interop itself.
 
 To install the unreleased code on `main` instead, name the repository:
 

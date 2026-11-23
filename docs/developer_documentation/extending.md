@@ -419,6 +419,37 @@ Built-in plugins live in:
 
 The class structure is identical to the project-local examples above. Open a PR adding the file. The contracts under `[tool.importlinter]` and the plugin-contract lints (see below) will run in CI.
 
+## Moving from the `interop` distribution
+
+The distributions were called `interop` and `interop-testing` until the first PyPI
+release. The import packages did not change, so no `import interop` line moves, and
+neither does a plugin entry point, a pipeline YAML file or an `INTEROP_*` variable. Only
+the names a resolver reads change.
+
+**A project that depends on this repository from git.** Rename the dependency and its
+`[tool.uv.sources]` key together. A `rev` that points past the rename with the old name
+in place fails to resolve, because the package no longer calls itself `interop`:
+
+```toml
+[dependency-groups]
+dev = ["tz-oss-interop", "tz-oss-interop-testing"]   # was: interop, interop-testing
+
+[tool.uv.sources]
+tz-oss-interop = { git = "https://github.com/transition-zero/tz-oss-interop", rev = "<sha>" }
+tz-oss-interop-testing = { git = "https://github.com/transition-zero/tz-oss-interop", subdirectory = "libs/interop-testing", rev = "<sha>" }
+```
+
+From the first release, drop `[tool.uv.sources]` and take both from PyPI instead.
+
+**A tool install.** uv registered the tool under its old distribution name, so
+`uv tool upgrade tz-oss-interop` does not find it. Remove it under the old name and
+install it under the new one:
+
+```bash
+uv tool uninstall interop
+uv tool install tz-oss-interop
+```
+
 ## 4. Testing your plugins with `tz-oss-interop-testing`
 
 `tz-oss-interop-testing` is a separate, optional package (`libs/interop-testing/`)

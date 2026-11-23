@@ -85,7 +85,7 @@ def reject_missing_templates() -> None:
     templates = files("interop") / "templates"
     for name in REQUIRED_TEMPLATES:
         reject_unreadable_template(templates, name)
-    print(f"{len(REQUIRED_TEMPLATES)} named templates read, {count_templates(templates)} in all")
+    print(f"{len(REQUIRED_TEMPLATES)} named templates read")
 
 
 def reject_unreadable_template(templates: Traversable, name: str) -> None:
@@ -97,12 +97,6 @@ def reject_unreadable_template(templates: Traversable, name: str) -> None:
     # A zip entry can be listed and still unreadable, so read it. `.gitkeep` is
     # empty by design, so the read proves access and not content.
     template.read_bytes()
-
-
-def count_templates(templates: Traversable) -> int:
-    if templates.is_file():
-        return 1
-    return sum(count_templates(child) for child in templates.iterdir())
 
 
 def reject_unimportable_harness() -> None:
