@@ -43,3 +43,48 @@ jobs:
         # GNU make is not on PATH on the Windows runner image, so call pytest
         # through uv directly rather than `make coverage`.
         run: uv run pytest --cov=interop --cov-report=term-missing
+
+  # The Test job runs against uv.lock, which pins one point in each dependency
+  # range. A capped dependency is one this project promises to work with across a
+  # range, so the newest release a consumer can resolve reaches them untested
+  # otherwise. This job resolves each capped dependency at its highest and runs
+  # the scenarios that read and write through them. No dependency is named here:
+  # `bounded_dependencies.py` reads the capped ones out of pyproject.toml, so a
+  # new upper bound joins this job on its own.
+  bounds:
+    name: Top of the dependency bounds
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ needs.versions.outputs.latest }}
+        run: uv python install ${{ needs.versions.outputs.latest }}
+
+      - name: Read the capped dependencies
+        id: capped
+        run: uv run --script .github/scripts/bounded_dependencies.py >> "$GITHUB_OUTPUT"
+
+      - name: Say which dependencies this job upgrades
+        run: echo "upgrading ${{ steps.capped.outputs.names }}"
+
+      # Deliberately not --locked: the point is to leave the lockfile's pin.
+      - name: Sync at the top of each bound
+        run: uv sync --all-groups ${{ steps.capped.outputs.upgrade }}
+
+      - name: Say what resolved
+        run: uv pip list | grep -E "infrastore|power-openapi-models|^Package|^-"
+
+      - name: Test the scenarios that read and write a Sienna time-series sidecar
+        run: |
+          uv run pytest \
+            tests/step_defs/test_sienna_schemas_contract.py \
+            tests/step_defs/sienna_to_pypsa \
+            tests/step_defs/pypsa_to_sienna

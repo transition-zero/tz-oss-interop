@@ -1,12 +1,22 @@
-name: Build and publish container image
+name: Build and publish
 
 on:
   push:
     tags:
       - "v*"
 
+# The least every job needs. A job that needs more declares its own block, which
+# replaces this one rather than adding to it.
+permissions:
+  contents: read
+
 jobs:
   build-and-publish:
+    name: Container image
+    # The smoke gates the image as well as the upload. An image tag here is
+    # immutable, and the job below refuses to overwrite one, so a tag pushed
+    # from a broken build cannot be replaced.
+    needs: smoke-wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -19,9 +29,8 @@ jobs:
           persist-credentials: false
 
       # Derive the image tag from the pushed git tag (e.g. refs/tags/v0.2.0 -> v0.2.0).
-      # This needs no hatch-vcs dependency: the package does not derive its
-      # version from the tag, but the tag itself is already a good version
-      # string for the image.
+      # `version` drops the leading "v", which is what PEP 440 and the package
+      # metadata use; the image keeps the tag as it was pushed.
       # Immutable version tags only — deliberately no `latest`. A consumer
       # should pin an exact version rather than float onto whatever was built
       # most recently, and a mutable tag risks serving a stale copy where a
@@ -29,7 +38,9 @@ jobs:
       - name: Derive image tag
         id: version
         run: |
-          echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -64,10 +75,160 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
           build-args: |
             GIT_SHA=${{ github.sha }}
-            VERSION=${{ steps.version.outputs.tag }}
+            VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # A GHCR package defaults to inheriting the repository's visibility, but
       # that is not guaranteed across every GitHub and org configuration. After
       # the first publish, check the package's visibility under Settings >
       # Packages rather than assuming it followed the repository.
+
+  versions:
+    uses: ./.github/workflows/python-versions.yml
+
+  # Prove the artefacts that are about to reach PyPI, which cannot replace a
+  # release. test.yml and lint.yml run on a push to main and on a pull request,
+  # so neither runs on a tag push, and neither installs a built wheel anywhere.
+  smoke-wheel:
+    name: Wheel smoke (Python ${{ matrix.python-version }})
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest and the newest supported Python. The install pulls pypsa,
+        # polars, netcdf4, xarray and juliacall, so the middle versions are not
+        # worth their minutes here; test.yml covers every version on each push.
+        python-version:
+          - ${{ fromJSON(needs.versions.outputs.all)[0] }}
+          - ${{ needs.versions.outputs.latest }}
+    steps:
+      # hatch-vcs reads the tags, and the default checkout depth fetches none.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Build both distributions
+        run: uv build --all-packages
+
+      # An empty environment, with no reference to this repository: no uv
+      # workspace, no lockfile and no editable install. Each install names the
+      # built wheel by path, so neither distribution can come from PyPI, and
+      # `--find-links dist` points the harness at the library wheel beside it.
+      - name: Make an empty environment
+        run: uv venv --python ${{ matrix.python-version }} /tmp/smoke
+
+      - name: Install the tz-oss-interop wheel
+        run: |
+          uv pip install --python /tmp/smoke/bin/python \
+            --find-links dist \
+            dist/tz_oss_interop-*.whl
+
+      - name: Prove the library wheel
+        run: |
+          PATH="/tmp/smoke/bin:$PATH" /tmp/smoke/bin/python \
+            .github/scripts/smoke_wheel.py library "${GITHUB_REF_NAME#v}"
+
+      - name: Install the tz-oss-interop-testing wheel beside it
+        run: |
+          uv pip install --python /tmp/smoke/bin/python \
+            --find-links dist \
+            dist/tz_oss_interop_testing-*.whl
+
+      - name: Prove the harness wheel
+        run: |
+          PATH="/tmp/smoke/bin:$PATH" /tmp/smoke/bin/python \
+            .github/scripts/smoke_wheel.py harness "${GITHUB_REF_NAME#v}"
+
+      - name: Keep the proven artefacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.python-version == needs.versions.outputs.latest
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  # PyPI Trusted Publishing: each upload authenticates over OIDC, so this
+  # repository holds no long-lived PyPI credential, which matches the stance the
+  # container job above records.
+  #
+  # One job per distribution, because PyPI requires a *pending* publisher's
+  # configuration to be unique. Two pending publishers cannot share one owner,
+  # repository, workflow and environment and differ only by project name, so the
+  # two distributions need an environment each. Only `pypi` carries the required
+  # reviewer: the harness job needs the library job, so approving the library
+  # releases both and a tag still cannot publish on its own.
+  publish-library:
+    name: Publish tz-oss-interop
+    needs: smoke-wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tz-oss-interop/
+    permissions:
+      id-token: write
+    steps:
+      - name: Take the artefacts the smoke proved
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: distributions
+          path: dist/
+
+      # The glob needs a hyphen after "interop", which the harness files do not
+      # have, so this takes the library's sdist and wheel and nothing else.
+      - name: Keep the library's artefacts alone
+        run: |
+          mkdir -p upload
+          mv dist/tz_oss_interop-* upload/
+          ls -l upload
+
+      # `skip-existing` passes over a file that PyPI already holds, so a release
+      # that failed between the two uploads finishes on a re-run instead of
+      # failing again on the library. It matches by filename and not by content,
+      # which is safe here: a re-run downloads the same artefacts that the smoke
+      # proved, so a skipped name is the file that was tested.
+      - name: Publish tz-oss-interop
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: upload
+          skip-existing: true
+
+  # The harness last: it requires tz-oss-interop at the exact same version, so
+  # the library must be resolvable before this appears.
+  publish-harness:
+    name: Publish tz-oss-interop-testing
+    needs: publish-library
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: pypi-testing
+      url: https://pypi.org/project/tz-oss-interop-testing/
+    permissions:
+      id-token: write
+    steps:
+      - name: Take the artefacts the smoke proved
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Keep the harness's artefacts alone
+        run: |
+          mkdir -p upload
+          mv dist/tz_oss_interop_testing-* upload/
+          ls -l upload
+
+      - name: Publish tz-oss-interop-testing
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: upload
+          skip-existing: true

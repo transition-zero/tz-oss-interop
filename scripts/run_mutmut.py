@@ -51,7 +51,7 @@ Which tests carry which tag, and why, is enforced by `scripts/lint_feature_tags.
 Setting `MUTATION_INCLUDE_FORK_UNSAFE` (the `make mutation-full` target does this)
 widens the default `-m "not slow"` filter to `-m "not slow or fork_unsafe"`, so the
 Polars tests rejoin the mutation suite locally; the genuinely heavy `@slow` tests
-(the subprocess install smoke) stay excluded either way.
+(the entry-point install smoke) stay excluded either way.
 
 Usage: `uv run python scripts/run_mutmut.py <args>` (e.g. `run`, `results`, `show <id>`).
 """

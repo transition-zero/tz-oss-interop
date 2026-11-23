@@ -1,5 +1,5 @@
 Feature: the published test harness drives a project's own pipeline
-  A project that installs `interop-testing` binds its .feature files to the step
+  A project that installs `tz-oss-interop-testing` binds its .feature files to the step
   vocabulary in `interop_testing.steps`: the PyPSA network builder for input
   fixtures, an isolated project directory, and a headless pipeline run. This
   scenario uses only that published surface, so it fails if the package stops
