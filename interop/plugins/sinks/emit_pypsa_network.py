@@ -284,6 +284,7 @@ def _add_transformers(network: pypsa.Network, transformers: pl.DataFrame | None)
             PyPSATransformerCol.X,
             PyPSATransformerCol.S_NOM,
             PyPSATransformerCol.TAP_RATIO,
+            PyPSATransformerCol.PHASE_SHIFT,
             PyPSATransformerCol.NUM_PARALLEL,
             PyPSATransformerCol.ACTIVE,
         ),

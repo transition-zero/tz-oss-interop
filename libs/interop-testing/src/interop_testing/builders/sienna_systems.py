@@ -479,6 +479,53 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"power_units for TwoWindingTransformer {name!r}")
         self._find_transformer_circuit(name)["power_units"] = power_units
 
+    def set_transformer_parameter_units(self, name: str, parameter_units: str) -> None:
+        self._check_not_saved(f"parameter_units for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["parameter_units"] = parameter_units
+
+    def set_transformer_base_power(self, name: str, base_power: float) -> None:
+        self._check_not_saved(f"base_power for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["base_power"] = base_power
+
+    def set_transformer_alpha(self, name: str, alpha: float) -> None:
+        """The phase shift of the circuit, in radians, which PyPSA holds in degrees."""
+        self._check_not_saved(f"alpha for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["alpha"] = alpha
+
+    def set_transformer_arc(self, name: str, arc_id: int) -> None:
+        """Point the circuit at an arc id, which lets a test state one the document has not."""
+        self._check_not_saved(f"arc for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["arc"] = arc_id
+
+    def set_transformer_magnetizing_shunt(self, name: str, real: float, imag: float) -> None:
+        self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
+        self._find_transformer(name)["magnetizing_shunt"] = {"real": real, "imag": imag}
+
+    def drop_transformer_circuit_field(self, name: str, field: str) -> None:
+        """Take one optional field out of the circuit, so the document states nothing for it."""
+        self._check_not_saved(f"{field} for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name).pop(field, None)
+
+    def add_unnamed_transformer_circuit(self, from_bus: str, to_bus: str, rating: float) -> None:
+        """A TransformerCircuit that no TwoWindingTransformer names, which reaches no table."""
+        self._check_not_saved("an unnamed TransformerCircuit")
+        self._transformer_circuits.append(
+            {
+                "sienna_type": "TransformerCircuit",
+                "id": self._next_id(),
+                "available": True,
+                "arc": self._arc_id(from_bus, to_bus),
+                "r": 0.0,
+                "x": 0.0,
+                "tap": 1.0,
+                "rating": rating,
+                "base_power": 100.0,
+                "power_units": "COMPONENT_BASE",
+                "base_voltage_primary": self._base_voltage(from_bus),
+                "base_voltage_secondary": self._base_voltage(to_bus),
+            }
+        )
+
     def _find_transformer(self, name: str) -> dict[str, Any]:
         for transformer in self._transformers:
             if transformer["name"] == name:

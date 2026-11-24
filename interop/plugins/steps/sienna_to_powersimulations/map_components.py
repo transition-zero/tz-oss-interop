@@ -57,6 +57,9 @@ from interop.plugins.steps.sienna_to_powersimulations._hydro import (
     report_unread_turbine_fields,
     report_unsolved_reservoirs,
 )
+from interop.plugins.steps.sienna_to_powersimulations._transformers import (
+    report_unmapped_transformers,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -252,6 +255,7 @@ class SiennaToPowerSimulationsMapComponents(TranslationStep):
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINES)
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINKS)
         report_unsolved_reservoirs(state, self._recorder)
+        report_unmapped_transformers(state, self._recorder)
 
         return state
 

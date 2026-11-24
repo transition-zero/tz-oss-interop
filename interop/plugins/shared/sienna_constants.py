@@ -327,6 +327,7 @@ class SiennaTwoWindingTransformerCol:
     ID = "id"
     NAME = "name"
     CIRCUIT = "circuit"
+    MAGNETIZING_SHUNT = "magnetizing_shunt"
 
 
 class SiennaTransformerCircuitCol:
@@ -342,8 +343,10 @@ class SiennaTransformerCircuitCol:
     R = "r"
     X = "x"
     TAP = "tap"
+    ALPHA = "alpha"
     RATING = "rating"
     POWER_UNITS = "power_units"
+    PARAMETER_UNITS = "parameter_units"
     BASE_POWER = "base_power"
     BASE_VOLTAGE_PRIMARY = "base_voltage_primary"
     BASE_VOLTAGE_SECONDARY = "base_voltage_secondary"
@@ -446,6 +449,8 @@ class SiennaStructField:
     LEVEL_SHORTAGE_COST = "level_shortage_cost"
     LEVEL_SURPLUS_COST = "level_surplus_cost"
     SPILLAGE_COST = "spillage_cost"
+    REAL = "real"
+    IMAG = "imag"
     # operation cost top-level discriminator / scalar fields
     COST_TYPE = "cost_type"
     VARIABLE_COST_TYPE = "variable_cost_type"

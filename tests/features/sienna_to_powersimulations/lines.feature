@@ -94,3 +94,14 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
     And the file "decisions.md" contains "constant loss in MW / system base 100 MVA -> per-unit for PS.jl"
     And the file "decisions.md" contains "loss.value_curve.function_data.constant_term` = 5.0"
+
+  Scenario: a TwoWindingTransformer has no counterpart in the system, and the run names it
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the system is saved as "inputs/transformer.json"
+    When I run translate against Sienna system "inputs/transformer.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" contains 0 components of type "TwoWindingTransformer"
+    And the log contains "1 TwoWindingTransformer(s) have no counterpart in the PowerSimulations system, so each is left out"
+    And the file "decisions.md" contains "the PowerSimulations system holds no transformer, so the branch and the voltage step it states stay out of the solve"

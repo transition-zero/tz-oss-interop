@@ -446,25 +446,46 @@ states another value is left out, and the report names it.
 | `r` | per unit of `s_nom` | `r` × `s_nom` ÷ `base_power` | `derived` |
 | `x` | per unit of `s_nom` | `x` × `s_nom` ÷ `base_power` | `derived` |
 | `tap_ratio` | | `tap` | `direct` |
+| `phase_shift` | degrees | `alpha`, which the circuit states in radians | `derived` |
 | `active` | | `available` | `direct` |
 | `num_parallel` | | `extensions.num_parallel` of the `transformer` record. If absent, `1.0`. | `sidecar` or `default` |
 | `s_nom_extendable` | | `extensions.s_nom_extendable` of the `transformer` record | `sidecar` |
 | `s_nom_min` | MVA | `rating` × `base_power`, for an extendable transformer only. | `derived` |
 
+SiennaSchemas 0.2 makes `tap`, `alpha`, `r`, `x` and `base_power` optional, and states the
+default of each one. A document that leaves the key out therefore states that default, and
+the translator reads it from SiennaSchemas rather than from a value of its own.
+
 PyPSA takes the voltage of a transformer from its two buses, so `base_voltage_primary` and
-`base_voltage_secondary` have no PyPSA field. The report states both as not mapped. Where a
-stated base voltage disagrees with the `v_nom` of its bus, the report names that too, because
-the per-unit impedance then sits on a voltage base the network does not hold.
+`base_voltage_secondary` have no PyPSA field. The report states each one as not mapped,
+whether the circuit states it or not. Where a stated base voltage disagrees with the `v_nom`
+of its bus, the report names that too, because the per-unit impedance then sits on a voltage
+base the network does not hold.
+
+The `magnetizing_shunt` of the transformer has no PyPSA field either, and the report states
+it as not mapped. PyPSA holds the shunt of a transformer as `g` and `b` at the midpoint of
+its model, and `shunt_location` names one winding, so a one-sided shunt has no PyPSA home.
 
 PyPSA states neither a carrier nor a length on a transformer. A stated one of either travels
 on to the PyPSA sidecar, under the `transformer` kind.
 
-Two kinds of transformer are left out, and the report names each one:
+Four kinds of transformer are left out, and the report names each one:
 
-- a transformer whose `circuit` names a `TransformerCircuit` that the document does not state;
+- a transformer whose `circuit` names a `TransformerCircuit` that the document does not state.
+  A `TransformerCircuit` that no transformer names is left out too, and the report names it by
+  its id, because the type states no name;
+- a circuit that states `parameter_units` as anything but `COMPONENT_BASE`. That field is the
+  basis of `r` and `x` alone, and an ohm read as a per-unit value is wrong by orders of
+  magnitude;
+- a circuit that states a base power of zero. The rating is a fraction of the base power, so
+  a base power of zero gives an `s_nom` of zero, which no per-unit impedance divides by;
 - a transformer that states a rating of zero. PyPSA states the impedance per unit of `s_nom`,
   and a rating of zero gives an `s_nom` of zero, which no per-unit value divides by. Such a
   transformer carries no power either way.
+
+A circuit whose `arc` names an `Arc` the document does not state, or whose `Arc` names a bus
+the document does not state, never reaches this mapping: the document reader leaves out a row
+that refers to no row it keeps, which leaves the transformer with no circuit.
 
 ## `TwoTerminalGenericHVDCLine` → `Link`
 

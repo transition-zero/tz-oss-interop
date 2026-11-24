@@ -79,8 +79,10 @@ _TRANSFORMER_CIRCUIT_FIELDS: tuple[str, ...] = (
     SiennaTransformerCircuitCol.R,
     SiennaTransformerCircuitCol.X,
     SiennaTransformerCircuitCol.TAP,
+    SiennaTransformerCircuitCol.ALPHA,
     SiennaTransformerCircuitCol.RATING,
     SiennaTransformerCircuitCol.POWER_UNITS,
+    SiennaTransformerCircuitCol.PARAMETER_UNITS,
     SiennaTransformerCircuitCol.BASE_POWER,
     SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY,
     SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY,
@@ -258,6 +260,7 @@ def _stage_unheld(
         if sienna_type not in _HELD_TYPES
         for component in rows
     ]
+    other_rows.extend(_list_unnamed_circuits(components))
     _stage_table(
         other_rows,
         SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA,
@@ -321,6 +324,28 @@ def _build_attribute_owner_rows(
     return rows
 
 
+def _list_unnamed_circuits(components: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each TransformerCircuit that no TwoWindingTransformer names, as an unheld row.
+
+    A transformer row reaches its circuit by the id the transformer states, so a circuit no
+    transformer names reaches no table. The unheld report names it by its id, because a
+    TransformerCircuit states no name.
+    """
+    named = {
+        transformer[SiennaTwoWindingTransformerCol.CIRCUIT]
+        for transformer in components.get(SiennaComponent.TWO_WINDING_TRANSFORMER, [])
+    }
+    return [
+        {
+            SiennaGeneratorCol.SIENNA_TYPE: SiennaComponent.TRANSFORMER_CIRCUIT.value,
+            SIENNA_ID_COLUMN: circuit[SiennaTransformerCircuitCol.ID],
+            SIENNA_NAME_COLUMN: circuit.get(SIENNA_NAME_COLUMN),
+        }
+        for circuit in components.get(SiennaComponent.TRANSFORMER_CIRCUIT, [])
+        if circuit[SiennaTransformerCircuitCol.ID] not in named
+    ]
+
+
 def _build_transformer_rows(
     components: dict[str, Any], arc_endpoints: dict[int, tuple[int, int]]
 ) -> list[dict[str, Any]]:
@@ -351,16 +376,20 @@ def _build_transformer_row(
     """Join one transformer to its circuit, and denormalise the Arc to bus0/bus1 ids.
 
     Every column stands in every row, so a transformer with no circuit states nulls rather
-    than making the staged table a different shape.
+    than making the staged table a different shape. A field the document leaves out also
+    stands as a null, which lets the step record the default that SiennaSchemas states.
     """
     stated = circuit or {}
     bus0_id, bus1_id = _find_arc_endpoints(stated, arc_endpoints)
-    row = {field: stated.get(field) for field in _TRANSFORMER_CIRCUIT_FIELDS}
+    row: dict[str, Any] = {field: stated.get(field) for field in _TRANSFORMER_CIRCUIT_FIELDS}
     row[SIENNA_ID_COLUMN] = transformer[SiennaTwoWindingTransformerCol.ID]
     row[SIENNA_NAME_COLUMN] = transformer[SiennaTwoWindingTransformerCol.NAME]
     row[SiennaTwoWindingTransformerCol.CIRCUIT] = transformer[
         SiennaTwoWindingTransformerCol.CIRCUIT
     ]
+    row[SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT] = transformer.get(
+        SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT
+    )
     row[SiennaTransformerCircuitCol.BUS0] = bus0_id
     row[SiennaTransformerCircuitCol.BUS1] = bus1_id
     return row

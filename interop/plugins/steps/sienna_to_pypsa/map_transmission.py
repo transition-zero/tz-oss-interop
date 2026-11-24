@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
+from power_openapi_models.operations.models import TransformerCircuit
 from pydantic import BaseModel
 
 from interop.core.extensions import (
@@ -94,53 +95,129 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
 _LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
 # The electrical data of a transformer sits on its circuit, so the events name that type.
 _CIRCUIT_TYPE = SiennaComponent.TRANSFORMER_CIRCUIT
+
+
+class _BusLookup(NamedTuple):
+    """The name and the nominal voltage of each bus, by the id a branch names it with."""
+
+    names: dict[int, str]
+    v_nom: dict[int, float]
+
+
 # The staged transformer row denormalises its Arc onto the two columns a line also uses.
 _BUS0 = SiennaTransformerCircuitCol.BUS0
 _BUS1 = SiennaTransformerCircuitCol.BUS1
-_TRANSFORMER_SKIP_RULES: tuple[SkipRule, ...] = (
-    SkipRule(
-        keep=pl.col(SiennaTransformerCircuitCol.ARC).is_not_null(),
-        report=SkipReport(
-            pipeline=SIENNA_TO_PYPSA,
-            framework=Framework.SIENNA,
-            component=SiennaComponent.TWO_WINDING_TRANSFORMER,
-            name_col=SIENNA_NAME_COLUMN,
-            reason="name a TransformerCircuit that the document does not state",
-            counted_noun="transformers",
-            note=(
-                "the document states no TransformerCircuit of this id, so the transformer "
-                "holds no impedance, no rating and no endpoints"
-            ),
-            attribute_col=SiennaTwoWindingTransformerCol.CIRCUIT,
+# Each optional circuit value the step reads as a number. SiennaSchemas states the default of
+# every one, so a document that leaves the key out still translates.
+_DEFAULTED_CIRCUIT_COLUMNS: tuple[str, ...] = (
+    SiennaTransformerCircuitCol.TAP,
+    SiennaTransformerCircuitCol.ALPHA,
+    SiennaTransformerCircuitCol.R,
+    SiennaTransformerCircuitCol.X,
+    SiennaTransformerCircuitCol.BASE_POWER,
+)
+_CIRCUIT_SCHEMA_DEFAULTS: dict[str, float] = {
+    column: float(TransformerCircuit.model_fields[column].default)
+    for column in _DEFAULTED_CIRCUIT_COLUMNS
+}
+# The one rule that a transformer with no circuit fails, which leaves every circuit column
+# null, so it stands before each rule that reads one of them.
+_CIRCUIT_STATED_RULE = SkipRule(
+    keep=pl.col(SiennaTransformerCircuitCol.ARC).is_not_null(),
+    report=SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=SiennaComponent.TWO_WINDING_TRANSFORMER,
+        name_col=SIENNA_NAME_COLUMN,
+        reason="name a TransformerCircuit that the document does not state",
+        counted_noun="transformers",
+        note=(
+            "the document states no TransformerCircuit of this id, so the transformer "
+            "holds no impedance, no rating and no endpoints"
         ),
-    ),
-    SkipRule(
-        keep=express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
-        report=build_power_units_skip_report(
-            SiennaComponent.TRANSFORMER_CIRCUIT,
-            "transformers",
-            SIENNA_NAME_COLUMN,
-            SiennaUnitSystem.COMPONENT_BASE,
-        ),
-    ),
-    SkipRule(
-        keep=pl.col(SiennaTransformerCircuitCol.RATING) != 0.0,
-        report=SkipReport(
-            pipeline=SIENNA_TO_PYPSA,
-            framework=Framework.SIENNA,
-            component=SiennaComponent.TRANSFORMER_CIRCUIT,
-            name_col=SIENNA_NAME_COLUMN,
-            reason="state a rating of zero",
-            counted_noun="transformers",
-            note=(
-                "PyPSA states the impedance of a transformer per unit of its s_nom, and a "
-                "rating of zero gives an s_nom of zero, which no per-unit value divides by; "
-                "the transformer carries no power either way"
-            ),
-            attribute_col=SiennaTransformerCircuitCol.RATING,
-        ),
+        attribute_col=SiennaTwoWindingTransformerCol.CIRCUIT,
     ),
 )
+_POWER_UNITS_RULE = SkipRule(
+    keep=express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
+    report=build_power_units_skip_report(
+        SiennaComponent.TRANSFORMER_CIRCUIT,
+        "transformers",
+        SIENNA_NAME_COLUMN,
+        SiennaUnitSystem.COMPONENT_BASE,
+    ),
+)
+# parameter_units is the basis of r and x alone, and SiennaSchemas defaults it to
+# COMPONENT_BASE, so a row that states nothing states the basis this reader converts.
+_PARAMETER_UNITS_RULE = SkipRule(
+    keep=pl.col(SiennaTransformerCircuitCol.PARAMETER_UNITS).is_null()
+    | (
+        pl.col(SiennaTransformerCircuitCol.PARAMETER_UNITS) == SiennaUnitSystem.COMPONENT_BASE.value
+    ),
+    report=SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=SiennaComponent.TRANSFORMER_CIRCUIT,
+        name_col=SIENNA_NAME_COLUMN,
+        reason="state an impedance basis this reader does not convert",
+        counted_noun="transformers",
+        note=(
+            lambda row: (
+                f"parameter_units is "
+                f"{row[SiennaTransformerCircuitCol.PARAMETER_UNITS]}; tz-oss-interop reads "
+                f"{SiennaUnitSystem.COMPONENT_BASE.value} for this type, and an ohm read as a "
+                f"per-unit value is wrong by orders of magnitude"
+            )
+        ),
+        attribute_col=SiennaTransformerCircuitCol.PARAMETER_UNITS,
+    ),
+)
+# A null base_power takes the SiennaSchemas default, which is not zero, so the rule keeps it.
+_BASE_POWER_RULE = SkipRule(
+    keep=pl.col(SiennaTransformerCircuitCol.BASE_POWER).is_null()
+    | (pl.col(SiennaTransformerCircuitCol.BASE_POWER) != 0.0),
+    report=SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=SiennaComponent.TRANSFORMER_CIRCUIT,
+        name_col=SIENNA_NAME_COLUMN,
+        reason="state a base power of zero",
+        counted_noun="transformers",
+        note=(
+            "the rating is a fraction of the base power, so a base power of zero gives an "
+            "s_nom of zero, which no per-unit impedance divides by"
+        ),
+        attribute_col=SiennaTransformerCircuitCol.BASE_POWER,
+    ),
+)
+_RATING_RULE = SkipRule(
+    keep=pl.col(SiennaTransformerCircuitCol.RATING) != 0.0,
+    report=SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=SiennaComponent.TRANSFORMER_CIRCUIT,
+        name_col=SIENNA_NAME_COLUMN,
+        reason="state a rating of zero",
+        counted_noun="transformers",
+        note=(
+            "PyPSA states the impedance of a transformer per unit of its s_nom, and a "
+            "rating of zero gives an s_nom of zero, which no per-unit value divides by; "
+            "the transformer carries no power either way"
+        ),
+        attribute_col=SiennaTransformerCircuitCol.RATING,
+    ),
+)
+
+
+# Every rule a staged transformer row passes, in the order the report applies them.
+_TRANSFORMER_SKIP_RULES: tuple[SkipRule, ...] = (
+    _CIRCUIT_STATED_RULE,
+    _POWER_UNITS_RULE,
+    _PARAMETER_UNITS_RULE,
+    _BASE_POWER_RULE,
+    _RATING_RULE,
+)
+
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line or a link.
 _DEFAULT_LENGTH = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.LENGTH])
@@ -296,13 +373,6 @@ def _reconstruct_link_power_limits(
     return _LinkPowerLimits(limit_max=limit_max, p_nom=p_nom, p_min_pu=p_min_pu, p_max_pu=p_max_pu)
 
 
-class _BusLookup(NamedTuple):
-    """The name and the nominal voltage of each bus, by the id a branch names it with."""
-
-    names: dict[int, str]
-    v_nom: dict[int, float]
-
-
 @dataclass(frozen=True)
 class _TransformerImpedance:
     """The PyPSA rating and impedance recovered from a Sienna circuit's per-unit values."""
@@ -312,44 +382,74 @@ class _TransformerImpedance:
     x_per_unit: float
 
 
+class _CircuitValues(NamedTuple):
+    """Each optional circuit value, as the document states it or as SiennaSchemas defaults it."""
+
+    tap: float
+    alpha: float
+    r: float
+    x: float
+    base_power: float
+
+
+def _fill_circuit_values(row: dict[str, Any]) -> _CircuitValues:
+    """Each optional circuit value, with the schema default where the document states none."""
+    filled = {column: _fill_circuit_default(row, column) for column in _DEFAULTED_CIRCUIT_COLUMNS}
+    return _CircuitValues(
+        tap=filled[SiennaTransformerCircuitCol.TAP],
+        alpha=filled[SiennaTransformerCircuitCol.ALPHA],
+        r=filled[SiennaTransformerCircuitCol.R],
+        x=filled[SiennaTransformerCircuitCol.X],
+        base_power=filled[SiennaTransformerCircuitCol.BASE_POWER],
+    )
+
+
+def _fill_circuit_default(row: dict[str, Any], column: str) -> float:
+    """One optional circuit value, or the default that SiennaSchemas gives the absent key."""
+    stated = row[column]
+    return float(stated) if stated is not None else _CIRCUIT_SCHEMA_DEFAULTS[column]
+
+
 def _convert_transformer_impedance(
-    reporter: TransformerReporter, name: str, row: dict[str, Any]
+    reporter: TransformerReporter, name: str, rating: float, values: _CircuitValues
 ) -> _TransformerImpedance:
     """Rebase the impedance from the circuit's base_power onto the s_nom PyPSA states it on.
 
     Both bases share the voltage of the primary winding, so the voltage cancels and the ratio
     of the two power bases is the whole conversion.
     """
-    rating = float(row[SiennaTransformerCircuitCol.RATING])
-    base_power = float(row[SiennaTransformerCircuitCol.BASE_POWER])
-    s_nom = rating * base_power
-    # The rating is never zero here, because a skip rule drops a transformer that states one.
-    rebase = s_nom / base_power if base_power else 0.0
-    r_stated = float(row[SiennaTransformerCircuitCol.R])
-    x_stated = float(row[SiennaTransformerCircuitCol.X])
+    s_nom = rating * values.base_power
+    # A skip rule drops a base power of zero, so the division always holds.
+    rebase = s_nom / values.base_power
     reporter.record_s_nom(name, rating, s_nom)
-    reporter.record_resistance(name, r_stated, r_stated * rebase)
-    reporter.record_reactance(name, x_stated, x_stated * rebase)
+    reporter.record_resistance(name, values.r, values.r * rebase)
+    reporter.record_reactance(name, values.x, values.x * rebase)
     return _TransformerImpedance(
-        s_nom=s_nom, r_per_unit=r_stated * rebase, x_per_unit=x_stated * rebase
+        s_nom=s_nom, r_per_unit=values.r * rebase, x_per_unit=values.x * rebase
     )
+
+
+def _derive_phase_shift(reporter: TransformerReporter, name: str, alpha: float) -> float:
+    """The PyPSA phase_shift, which states in degrees the angle the circuit states in radians."""
+    degrees = math.degrees(alpha)
+    reporter.record_phase_shift(name, alpha, degrees)
+    return degrees
 
 
 def _report_base_voltages(
     reporter: TransformerReporter, name: str, row: dict[str, Any], buses: _BusLookup
 ) -> None:
     """Record both base voltages, and each one that disagrees with the bus it belongs to."""
-    primary = float(row[SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY])
-    secondary = float(row[SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY])
-    reporter.record_base_voltages(name, primary, secondary)
     windings = (
-        (SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, primary, row[_BUS0]),
-        (SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, secondary, row[_BUS1]),
+        (SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, row[_BUS0]),
+        (SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, row[_BUS1]),
     )
-    for attribute, stated, bus_id in windings:
+    for attribute, bus_id in windings:
+        stated = row[attribute]
+        reporter.record_base_voltage(name, attribute, stated)
         bus_v_nom = buses.v_nom.get(bus_id)
-        if bus_v_nom is not None and bus_v_nom != stated:
-            reporter.record_base_voltage_mismatch(name, attribute, stated, bus_v_nom)
+        if stated is not None and bus_v_nom is not None and bus_v_nom != float(stated):
+            reporter.record_base_voltage_mismatch(name, attribute, float(stated), bus_v_nom)
 
 
 def _build_transformer_row(
@@ -360,19 +460,24 @@ def _build_transformer_row(
 ) -> dict[str, Any]:
     """One PyPSA transformer, from a Sienna transformer row and its sidecar record."""
     name = row[SIENNA_NAME_COLUMN]
+    # A circuit whose Arc, or whose Arc's bus, the document does not state never reaches this
+    # step: the reader drops the circuit, and the circuit rule then drops the transformer.
     bus0 = buses.names[row[_BUS0]]
     bus1 = buses.names[row[_BUS1]]
     available = bool(row[SiennaTransformerCircuitCol.AVAILABLE])
-    tap = float(row[SiennaTransformerCircuitCol.TAP])
+    values = _fill_circuit_values(row)
+    rating = float(row[SiennaTransformerCircuitCol.RATING])
     reporter.record_endpoints(name, row[SiennaTransformerCircuitCol.ARC], bus0, bus1)
     reporter.record_available(name, available)
-    reporter.record_tap(name, tap)
-    impedance = _convert_transformer_impedance(reporter, name, row)
+    reporter.record_tap(name, values.tap)
+    impedance = _convert_transformer_impedance(reporter, name, rating, values)
+    phase_shift = _derive_phase_shift(reporter, name, values.alpha)
     _report_base_voltages(reporter, name, row, buses)
+    reporter.record_magnetizing_shunt(name, row[SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT])
     record_carried_fields(reporter, _CIRCUIT_TYPE, ext, TRANSFORMER_CARRIED)
     s_nom_min = extendable_floor(impedance.s_nom, ext.s_nom_extendable)
     if s_nom_min is not None:
-        reporter.record_s_nom_min(name, float(row[SiennaTransformerCircuitCol.RATING]), s_nom_min)
+        reporter.record_s_nom_min(name, rating, s_nom_min)
     return {
         PyPSATransformerCol.NAME: name,
         PyPSATransformerCol.BUS0: bus0,
@@ -380,7 +485,8 @@ def _build_transformer_row(
         PyPSATransformerCol.R: impedance.r_per_unit,
         PyPSATransformerCol.X: impedance.x_per_unit,
         PyPSATransformerCol.S_NOM: impedance.s_nom,
-        PyPSATransformerCol.TAP_RATIO: tap,
+        PyPSATransformerCol.TAP_RATIO: values.tap,
+        PyPSATransformerCol.PHASE_SHIFT: phase_shift,
         PyPSATransformerCol.NUM_PARALLEL: ext.num_parallel
         if ext.num_parallel is not None
         else _DEFAULT_NUM_PARALLEL,

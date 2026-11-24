@@ -230,6 +230,7 @@ class PyPSATransformerCol:
     X = "x"
     S_NOM = "s_nom"
     TAP_RATIO = "tap_ratio"
+    PHASE_SHIFT = "phase_shift"
     NUM_PARALLEL = "num_parallel"
     ACTIVE = "active"
     S_NOM_EXTENDABLE = "s_nom_extendable"
@@ -682,6 +683,7 @@ TRANSFORMERS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSATransformerCol.X: pl.Float64,
     PyPSATransformerCol.S_NOM: pl.Float64,
     PyPSATransformerCol.TAP_RATIO: pl.Float64,
+    PyPSATransformerCol.PHASE_SHIFT: pl.Float64,
     PyPSATransformerCol.NUM_PARALLEL: pl.Float64,
     PyPSATransformerCol.ACTIVE: pl.Boolean,
     PyPSATransformerCol.S_NOM_EXTENDABLE: pl.Boolean,

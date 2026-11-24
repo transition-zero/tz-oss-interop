@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from interop.plugins.shared.constants import UNIT_KV, UNIT_MVA
 from interop.plugins.shared.pypsa_constants import PyPSAComponent, PyPSATransformerCol
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
+    SiennaStructField,
     SiennaTransformerCircuitCol,
+    SiennaTwoWindingTransformerCol,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters._base import (
     AVAILABLE_TO_ACTIVE,
@@ -21,9 +25,20 @@ _S_NOM_FLOOR_DERIVATION = EXTENDABLE_FLOOR_TEMPLATE.format(capacity=PyPSATransfo
 # same voltage base, so the ratio of the two bases is the whole conversion.
 _IMPEDANCE_DERIVATION = "{attribute} * s_nom / base_power"
 _TAP_TO_TAP_RATIO = "tap -> tap_ratio"
+_ALPHA_TO_PHASE_SHIFT = "alpha radians -> phase_shift degrees"
 _BASE_VOLTAGE_NOTE = (
     "PyPSA takes the voltage of a transformer from its two buses, so a stated base voltage "
     "has no column of its own"
+)
+_UNSTATED_BASE_VOLTAGE_NOTE = (
+    "the circuit states no {attribute}, and PyPSA takes the voltage of a transformer from its "
+    "two buses either way"
+)
+# PyPSA holds g and b at the midpoint of its transformer model, and shunt_location names one
+# winding, so a one-sided shunt has no PyPSA home.
+_MAGNETIZING_SHUNT_NOTE = (
+    "PyPSA holds the shunt of a transformer as g and b at the midpoint of its model, and "
+    "shunt_location names one winding, so the shunt stays out rather than move"
 )
 _BASE_VOLTAGE_MISMATCH_NOTE = (
     "the circuit states {attribute} {stated} kV and its bus states v_nom {bus_v_nom} kV, so "
@@ -95,18 +110,37 @@ class TransformerReporter(SiennaToPypsaReporter):
             derivation=_S_NOM_FLOOR_DERIVATION,
         )
 
-    def record_base_voltages(self, name: str, primary: float, secondary: float) -> None:
-        """Both base voltages, which the network holds on the two buses and not here."""
+    def record_phase_shift(self, name: str, alpha: float, degrees: float) -> None:
+        self._derived(
+            sources=[self._circuit(name, SiennaTransformerCircuitCol.ALPHA, alpha)],
+            destinations=[self._destination(name, PyPSATransformerCol.PHASE_SHIFT, degrees)],
+            derivation=_ALPHA_TO_PHASE_SHIFT,
+        )
+
+    def record_base_voltage(self, name: str, attribute: str, stated: float | None) -> None:
+        """One base voltage, which the network holds on the bus of that winding and not here."""
+        note = (
+            _BASE_VOLTAGE_NOTE
+            if stated is not None
+            else _UNSTATED_BASE_VOLTAGE_NOTE.format(attribute=attribute)
+        )
+        self._not_mapped(
+            sources=[self._circuit(name, attribute, stated, UNIT_KV)],
+            note=note,
+        )
+
+    def record_magnetizing_shunt(self, name: str, shunt: dict[str, Any] | None) -> None:
+        """The magnetizing shunt, which the transformer states and PyPSA places elsewhere."""
         self._not_mapped(
             sources=[
-                self._circuit(
-                    name, SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, primary, UNIT_KV
-                ),
-                self._circuit(
-                    name, SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, secondary, UNIT_KV
-                ),
+                self._source_field(
+                    SiennaComponent.TWO_WINDING_TRANSFORMER,
+                    name,
+                    SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT,
+                    _format_shunt(shunt),
+                )
             ],
-            note=_BASE_VOLTAGE_NOTE,
+            note=_MAGNETIZING_SHUNT_NOTE,
         )
 
     def record_base_voltage_mismatch(
@@ -119,3 +153,12 @@ class TransformerReporter(SiennaToPypsaReporter):
                 attribute=attribute, stated=stated, bus_v_nom=bus_v_nom
             ),
         )
+
+
+def _format_shunt(shunt: dict[str, Any] | None) -> str | None:
+    """A complex shunt as the report states it, or nothing where the transformer states none."""
+    if shunt is None:
+        return None
+    real = shunt[SiennaStructField.REAL]
+    imag = shunt[SiennaStructField.IMAG]
+    return f"{real} + {imag}j"

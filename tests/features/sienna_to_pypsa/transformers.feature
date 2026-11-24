@@ -104,3 +104,106 @@ Feature: Sienna to PyPSA Pipeline translates a TwoWindingTransformer to a PyPSA 
     Then the PyPSA network "outputs/network.nc" has 1 transformer
     And the PyPSA network "outputs/network.nc" has no transformer "step_1"
     And the log contains "1 transformers state a rating of zero, so each is left out"
+
+  Scenario: a circuit that states no optional value takes the default SiennaSchemas gives it
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" states no tap
+    And the transformer "step_1" states no r
+    And the transformer "step_1" states no x
+    And the transformer "step_1" states no base_power
+    And the system is saved as "inputs/transformer_defaults.json"
+    When I run translate against "inputs/transformer_defaults.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the PyPSA network "outputs/network.nc" transformer "step_1" attribute "tap_ratio" is 1.0
+    And the PyPSA network "outputs/network.nc" transformer "step_1" attribute "r" is 0.0
+    And the PyPSA network "outputs/network.nc" transformer "step_1" attribute "x" is 0.0
+    And the PyPSA network "outputs/network.nc" transformer "step_1" attribute "s_nom" is 429.0
+
+  Scenario: a base voltage the circuit does not state is recorded as stating nothing
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" states no base_voltage_primary
+    And the transformer "step_1" states no base_voltage_secondary
+    And the system is saved as "inputs/transformer_no_voltage.json"
+    When I run translate against "inputs/transformer_no_voltage.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the file "decisions.md" contains "the circuit states no base_voltage_primary, and PyPSA takes the voltage of a transformer from its two buses either way"
+
+  Scenario: a transformer whose Arc the document does not state is left out
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the system contains a transformer "step_2" from "high" to "low" with rating 2.0 r 0.01 x 0.1
+    And the transformer "step_2" names arc 9999
+    And the system is saved as "inputs/transformer_no_arc.json"
+    When I run translate against "inputs/transformer_no_arc.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the PyPSA network "outputs/network.nc" has no transformer "step_2"
+    And the log contains "refers to no row that is kept: arc"
+    And the log contains "1 transformers name a TransformerCircuit that the document does not state, so each is left out"
+
+  Scenario: a circuit that states its impedance in natural units is left out
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 48.4 x 48.4
+    And the transformer "step_1" states parameter_units NATURAL_UNITS
+    And the system contains a transformer "step_2" from "high" to "low" with rating 2.0 r 0.01 x 0.1
+    And the system is saved as "inputs/transformer_ohms.json"
+    When I run translate against "inputs/transformer_ohms.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the PyPSA network "outputs/network.nc" has no transformer "step_1"
+    And the log contains "1 transformers state an impedance basis this reader does not convert, so each is left out"
+
+  Scenario: a circuit that states a base power of zero is left out
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" has base_power 0.0
+    And the system contains a transformer "step_2" from "high" to "low" with rating 2.0 r 0.01 x 0.1
+    And the system is saved as "inputs/transformer_no_base.json"
+    When I run translate against "inputs/transformer_no_base.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the PyPSA network "outputs/network.nc" has no transformer "step_1"
+    And the log contains "1 transformers state a base power of zero, so each is left out"
+
+  Scenario: the alpha of a circuit becomes the PyPSA phase_shift, in degrees
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" has alpha 0.5235987755982988 radians
+    And the system is saved as "inputs/transformer_alpha.json"
+    When I run translate against "inputs/transformer_alpha.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" transformer "step_1" attribute "phase_shift" is 30.0
+    And the file "decisions.md" contains "alpha radians -> phase_shift degrees"
+
+  Scenario: a magnetizing shunt is not mapped, because PyPSA places its shunt elsewhere
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" has a magnetizing shunt of 0.01 and 0.02
+    And the system is saved as "inputs/transformer_shunt.json"
+    When I run translate against "inputs/transformer_shunt.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the file "decisions.md" contains "PyPSA holds the shunt of a transformer as g and b at the midpoint of its model"
+    And the file "decisions.md" contains "0.01 + 0.02j"
+
+  Scenario: a TransformerCircuit that no transformer names reaches the unheld report
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the system contains a TransformerCircuit from "high" to "low" with rating 2.0 that no transformer names
+    And the system is saved as "inputs/transformer_orphan_circuit.json"
+    When I run translate against "inputs/transformer_orphan_circuit.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the log contains "1 TransformerCircuit(s) have no PyPSA counterpart, so each is left out"

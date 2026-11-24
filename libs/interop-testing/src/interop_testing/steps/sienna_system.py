@@ -473,6 +473,60 @@ def given_transformer_power_units(
     sienna_system_builder.set_transformer_power_units(name, power_units)
 
 
+@given(parsers.parse('the transformer "{name}" states parameter_units {parameter_units}'))
+def given_transformer_parameter_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, parameter_units: str
+) -> None:
+    sienna_system_builder.set_transformer_parameter_units(name, parameter_units)
+
+
+@given(parsers.parse('the transformer "{name}" has base_power {base_power:g}'))
+def given_transformer_base_power(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_power: float
+) -> None:
+    sienna_system_builder.set_transformer_base_power(name, base_power)
+
+
+@given(parsers.parse('the transformer "{name}" has alpha {alpha:g} radians'))
+def given_transformer_alpha(
+    sienna_system_builder: SiennaSystemBuilder, name: str, alpha: float
+) -> None:
+    sienna_system_builder.set_transformer_alpha(name, alpha)
+
+
+@given(parsers.parse('the transformer "{name}" names arc {arc_id:d}'))
+def given_transformer_names_arc(
+    sienna_system_builder: SiennaSystemBuilder, name: str, arc_id: int
+) -> None:
+    sienna_system_builder.set_transformer_arc(name, arc_id)
+
+
+@given(parsers.parse('the transformer "{name}" has a magnetizing shunt of {real:g} and {imag:g}'))
+def given_transformer_magnetizing_shunt(
+    sienna_system_builder: SiennaSystemBuilder, name: str, real: float, imag: float
+) -> None:
+    sienna_system_builder.set_transformer_magnetizing_shunt(name, real, imag)
+
+
+@given(parsers.parse('the transformer "{name}" states no {field}'))
+def given_transformer_states_no_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.drop_transformer_circuit_field(name, field)
+
+
+@given(
+    parsers.parse(
+        'the system contains a TransformerCircuit from "{from_bus}" to "{to_bus}" '
+        "with rating {rating:g} that no transformer names"
+    )
+)
+def given_system_contains_unnamed_circuit(
+    sienna_system_builder: SiennaSystemBuilder, from_bus: str, to_bus: str, rating: float
+) -> None:
+    sienna_system_builder.add_unnamed_transformer_circuit(from_bus, to_bus, rating)
+
+
 @given(parsers.parse('the HVDC line "{name}" is unavailable'))
 def given_hvdc_line_unavailable(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.set_link_available(name, available=False)
