@@ -202,7 +202,8 @@ class TranslatedTransmission:
     link_extensions: list[ControllableLineExtension]
     transformer_extensions: list[TransformerExtension]
 
-    def count_ids(self) -> int:
+    @property
+    def id_count(self) -> int:
         """How many ids the rows so far hold, so the next row takes the one after them."""
         return len(self.lines) + len(self.links) + len(self.transformers) + len(self.circuits)
 
@@ -269,7 +270,7 @@ def _add_branch(
     """Add the Sienna branch that one PLEXOS Line becomes."""
     if not line.is_electrical:
         _add_link(translated, line, reporters.link, first_id)
-    elif _steps_voltage(line, endpoints.stated):
+    elif _is_voltage_step(line, endpoints.stated):
         _add_transformer(translated, line, endpoints, reporters, first_id)
     else:
         _add_line(translated, line, endpoints.by_bus, reporters.line, first_id)
@@ -294,7 +295,7 @@ def _choose_reporter(
     """The reporter of the Sienna type that one PLEXOS Line becomes."""
     if not line.is_electrical:
         return reporters.link
-    return reporters.circuit if _steps_voltage(line, stated_voltages) else reporters.line
+    return reporters.circuit if _is_voltage_step(line, stated_voltages) else reporters.line
 
 
 def _stated_voltage_by_node(state: State) -> dict[str, float]:
@@ -311,7 +312,7 @@ def _stated_voltage_by_node(state: State) -> dict[str, float]:
     }
 
 
-def _steps_voltage(line: StagedLine, stated_voltages: dict[str, float]) -> bool:
+def _is_voltage_step(line: StagedLine, stated_voltages: dict[str, float]) -> bool:
     """Whether both endpoint Nodes state a Voltage and the two differ."""
     primary = stated_voltages.get(line.endpoints.node_from)
     secondary = stated_voltages.get(line.endpoints.node_to)
@@ -346,7 +347,7 @@ def _add_line(
     mapping = _derive_line(line, voltage)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLineCol.NAME, line.name)
-    row[SiennaLineCol.ID] = first_id + translated.count_ids()
+    row[SiennaLineCol.ID] = first_id + translated.id_count
     reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID])
     translated.lines.append(row)
     _record_dropped(reporter, line, _DROPPED_LINE_PROPERTIES)
@@ -399,7 +400,7 @@ def _add_circuit(
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, _CIRCUIT_NAME_COLUMN, line.name)
     del row[_CIRCUIT_NAME_COLUMN]
-    row[SiennaTransformerCircuitCol.ID] = first_id + translated.count_ids()
+    row[SiennaTransformerCircuitCol.ID] = first_id + translated.id_count
     reporter.record_id(
         line.name, SiennaTransformerCircuitCol.ID, row[SiennaTransformerCircuitCol.ID]
     )
@@ -418,7 +419,7 @@ def _add_two_winding_transformer(
     mapping = _derive_transformer(line, circuit_id)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaTwoWindingTransformerCol.NAME, line.name)
-    row[SiennaTwoWindingTransformerCol.ID] = first_id + translated.count_ids()
+    row[SiennaTwoWindingTransformerCol.ID] = first_id + translated.id_count
     reporter.record_id(
         line.name, SiennaTwoWindingTransformerCol.ID, row[SiennaTwoWindingTransformerCol.ID]
     )
@@ -434,7 +435,7 @@ def _add_link(
     mapping = _derive_link(line)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLinkCol.NAME, line.name)
-    row[SiennaLinkCol.ID] = first_id + translated.count_ids()
+    row[SiennaLinkCol.ID] = first_id + translated.id_count
     reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID])
     translated.links.append(row)
     _record_dropped(reporter, line, _DROPPED_LINK_PROPERTIES)
@@ -510,13 +511,13 @@ def _derive_circuit(line: StagedLine, primary: float, secondary: float) -> _Circ
         x=_impedance(line, PlexosProperty.REACTANCE, primary),
         tap=Decision.default(NOMINAL_TAP, _TAP_NOTE),
         rating=_rating(line),
-        base_voltages=_base_voltages(line, primary, secondary),
+        base_voltages=_derive_base_voltages(line, primary, secondary),
         power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, LINE_UNITS_NOTE),
         base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
     )
 
 
-def _base_voltages(line: StagedLine, primary: float, secondary: float) -> Decision:
+def _derive_base_voltages(line: StagedLine, primary: float, secondary: float) -> Decision:
     sources = [
         SourceValue(
             PlexosClass.NODE, line.endpoints.node_from, PlexosProperty.VOLTAGE, primary, UNIT_KV

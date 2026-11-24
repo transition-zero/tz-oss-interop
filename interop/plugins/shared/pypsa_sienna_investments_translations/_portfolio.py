@@ -30,7 +30,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
 )
 from interop.plugins.shared.sienna_constants import (
     SIENNA_ID_COLUMN,
-    SiennaACBusCol,
     SiennaComponent,
 )
 from interop.plugins.shared.sienna_events import build_sienna_field
@@ -52,12 +51,11 @@ BuildTranslations = Callable[[int], list[Translation]]
 _FIRST_ID = 1
 
 # SiennaSchemas 0.2 holds no attribute for the buses of an area, and the base system states
-# the area of each ACBus, so the map is already in the document the same run writes.
+# the area of each ACBus, so the map is already in the document the same run writes. The event
+# names no attribute, because the field that is missing is one SiennaSchemas does not have.
 _AREA_BUSES_EVENT = TranslationEvent(
     kind=EventKind.NOT_MAPPED,
-    destinations=[
-        build_sienna_field(SiennaComponent.AREA, ALL_COMPONENTS, attribute=SiennaACBusCol.NAME)
-    ],
+    destinations=[build_sienna_field(SiennaComponent.AREA, ALL_COMPONENTS)],
     note="SiennaSchemas 0.2 states the buses of an area nowhere; read ACBus.area instead",
 )
 

@@ -299,8 +299,8 @@ schema default.
 The `Length` and the `Circuits` of the line travel as a `transformer` record in
 `extensions.json`, because the `TransformerCircuit` holds neither.
 
-The Sienna to PyPSA leg does not read the two records back, so a transformer does not survive
-a round trip.
+The Sienna to PyPSA leg reads the transformer back as a PyPSA `Transformer`; see
+[the Sienna to PyPSA mapping](translation-from-sienna-to-pypsa.md#twowindingtransformer-and-transformercircuit--transformer).
 
 ### Lines without impedance → `TwoTerminalGenericHVDCLine`
 
