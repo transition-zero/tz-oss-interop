@@ -65,14 +65,14 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
     Then the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_1" having "bustype" set to "PQ"
     And the file "decisions.md" contains "|  | `sienna.ACBus.bus_1.bustype` = PQ |  | n.buses.control='unknown' unrecognised; defaulted to PQ | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
-  Scenario: bus with no location produces no areas and a null area field
+  Scenario: bus with no location produces no areas and no area field
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network is saved as "inputs/no_location.nc"
     When I run translate against "inputs/no_location.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as valid JSON
     And the file "outputs/system.json" parses as JSON with 1 components of type "ACBus"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_1" having "area" set to null
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_1" without field "area"
     And the file "outputs/system.json" parses as JSON with 0 components of type "Area"
     And the file "decisions.md" contains "| `pypsa.Bus.bus_1.location` | `sienna.ACBus.bus_1.area` | location -> area name; null if absent |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 

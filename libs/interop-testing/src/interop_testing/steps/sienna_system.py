@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from pytest_bdd import given, parsers, then
 
+from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop_testing.builders.sienna_documents import (
     find_sienna_component,
     list_attributes_for,
@@ -51,6 +52,13 @@ def given_system_contains_area(sienna_system_builder: SiennaSystemBuilder, name:
 @given(parsers.parse('the system contains a bus "{name}"'))
 def given_system_contains_bus(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_bus(name)
+
+
+@given(parsers.parse('the system contains a bus "{name}" at {base_voltage:g} kV'))
+def given_system_contains_bus_at_voltage(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_voltage: float
+) -> None:
+    sienna_system_builder.add_bus(name, base_voltage=base_voltage)
 
 
 @given(parsers.parse('the system contains a load zone "{name}"'))
@@ -379,12 +387,20 @@ def given_system_contains_line_with_shunt(
 
 
 @given(
-    parsers.parse('the Line "{name}" has ext length {length:g} and num_parallel {num_parallel:g}')
+    parsers.parse(
+        'the {sienna_type} "{name}" has ext length {length:g} and num_parallel {num_parallel:g}'
+    )
 )
-def given_line_has_ext(
-    sienna_system_builder: SiennaSystemBuilder, name: str, length: float, num_parallel: float
+def given_component_has_ext_length(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    length: float,
+    num_parallel: float,
 ) -> None:
-    sienna_system_builder.add_ext("Line", name, {"length": length, "num_parallel": num_parallel})
+    sienna_system_builder.add_ext(
+        sienna_type, name, {"length": length, "num_parallel": num_parallel}
+    )
 
 
 @given(parsers.parse('the Line "{name}" is unavailable'))
@@ -416,6 +432,117 @@ def given_line_power_units(
 @given(parsers.parse('the Line "{name}" is extendable in ext'))
 def given_line_extendable_in_ext(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_ext("Line", name, {"s_nom_extendable": True})
+
+
+@given(
+    parsers.parse(
+        'the system contains a transformer "{name}" from "{from_bus}" to "{to_bus}" '
+        "with rating {rating:g} r {r:g} x {x:g}"
+    )
+)
+def given_system_contains_transformer(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    from_bus: str,
+    to_bus: str,
+    rating: float,
+    r: float,
+    x: float,
+) -> None:
+    sienna_system_builder.add_transformer(name, from_bus, to_bus, rating, r, x)
+
+
+@given(parsers.parse('the transformer "{name}" has tap {tap:g}'))
+def given_transformer_tap(
+    sienna_system_builder: SiennaSystemBuilder, name: str, tap: float
+) -> None:
+    sienna_system_builder.set_transformer_tap(name, tap)
+
+
+@given(parsers.parse('the transformer "{name}" names circuit {circuit_id:d}'))
+def given_transformer_names_circuit(
+    sienna_system_builder: SiennaSystemBuilder, name: str, circuit_id: int
+) -> None:
+    sienna_system_builder.set_transformer_circuit(name, circuit_id)
+
+
+@given(parsers.parse('the transformer "{name}" states power_units {power_units}'))
+def given_transformer_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_transformer_power_units(name, power_units)
+
+
+@given(parsers.parse('the transformer "{name}" states parameter_units {parameter_units}'))
+def given_transformer_parameter_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, parameter_units: str
+) -> None:
+    sienna_system_builder.set_transformer_parameter_units(name, parameter_units)
+
+
+@given(parsers.parse('the transformer "{name}" has base_power {base_power:g}'))
+def given_transformer_base_power(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_power: float
+) -> None:
+    sienna_system_builder.set_transformer_base_power(name, base_power)
+
+
+@given(parsers.parse('the transformer "{name}" has alpha {alpha:g} radians'))
+def given_transformer_alpha(
+    sienna_system_builder: SiennaSystemBuilder, name: str, alpha: float
+) -> None:
+    sienna_system_builder.set_transformer_alpha(name, alpha)
+
+
+@given(parsers.parse('the transformer "{name}" names arc {arc_id:d}'))
+def given_transformer_names_arc(
+    sienna_system_builder: SiennaSystemBuilder, name: str, arc_id: int
+) -> None:
+    sienna_system_builder.set_transformer_arc(name, arc_id)
+
+
+@given(parsers.parse('the transformer "{name}" has a magnetizing shunt of {real:g} and {imag:g}'))
+def given_transformer_magnetizing_shunt(
+    sienna_system_builder: SiennaSystemBuilder, name: str, real: float, imag: float
+) -> None:
+    sienna_system_builder.set_transformer_magnetizing_shunt(name, real, imag)
+
+
+@given(parsers.parse('the transformer "{name}" states {field} {base_voltage:g} kV'))
+def given_transformer_base_voltage(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, base_voltage: float
+) -> None:
+    sienna_system_builder.set_transformer_base_voltage(name, field, base_voltage)
+
+
+@given(
+    parsers.parse(
+        'the transformer "{name}" has a magnetizing shunt that states {field} {value:g} alone'
+    )
+)
+def given_transformer_magnetizing_shunt_part(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, value: float
+) -> None:
+    sienna_system_builder.set_transformer_magnetizing_shunt_part(name, field, value)
+
+
+@given(parsers.parse('the transformer "{name}" states no {field}'))
+def given_transformer_states_no_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.drop_transformer_circuit_field(name, field)
+
+
+@given(
+    parsers.parse(
+        'the system contains a TransformerCircuit from "{from_bus}" to "{to_bus}" '
+        "with rating {rating:g} that no transformer names"
+    )
+)
+def given_system_contains_unnamed_circuit(
+    sienna_system_builder: SiennaSystemBuilder, from_bus: str, to_bus: str, rating: float
+) -> None:
+    sienna_system_builder.add_unnamed_transformer_circuit(from_bus, to_bus, rating)
 
 
 @given(parsers.parse('the HVDC line "{name}" is unavailable'))
@@ -875,6 +1002,27 @@ def assert_sienna_component_field_close(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == pytest.approx(value), (
         f"expected [{sienna_type}:{name}].{field_path!r} ≈ {value!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the written Sienna transformer "{name}" names a circuit with "{field_path}" set to {value}'
+    )
+)
+def assert_sienna_transformer_circuit(name: str, field_path: str, value: str) -> None:
+    """A TwoWindingTransformer holds its name alone; its circuit holds the electrical data."""
+    document = read_json(SYSTEM_PATH)
+    transformer = find_sienna_component(document, SiennaComponent.TWO_WINDING_TRANSFORMER, name)
+    circuits = sienna_components_of_type(document, SiennaComponent.TRANSFORMER_CIRCUIT)
+    circuit = next((row for row in circuits if row["id"] == transformer["circuit"]), None)
+    assert circuit is not None, (
+        f"transformer {name!r} names circuit {transformer['circuit']!r}, "
+        f"and the document holds circuits {[row['id'] for row in circuits]}"
+    )
+    actual = navigate_json(circuit, field_path, f"{SYSTEM_PATH}[circuit of {name}]")
+    assert actual == json.loads(value), (
+        f"expected the circuit of {name!r} to state {field_path!r} = {value}, got {actual!r}"
     )
 
 

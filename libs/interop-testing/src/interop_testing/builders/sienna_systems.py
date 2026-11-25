@@ -67,6 +67,8 @@ class SiennaSystemBuilder:
         self._loads: list[dict[str, Any]] = []
         self._arcs: list[dict[str, Any]] = []
         self._lines: list[dict[str, Any]] = []
+        self._transformers: list[dict[str, Any]] = []
+        self._transformer_circuits: list[dict[str, Any]] = []
         self._links: list[dict[str, Any]] = []
         self._time_series: list[dict[str, Any]] = []
         self._ext: dict[tuple[str, str], dict[str, Any]] = {}
@@ -118,12 +120,20 @@ class SiennaSystemBuilder:
             }
         )
 
-    def add_bus(self, name: str, area: str | None = None, load_zone: str | None = None) -> None:
+    def add_bus(
+        self,
+        name: str,
+        area: str | None = None,
+        load_zone: str | None = None,
+        base_voltage: float | None = None,
+    ) -> None:
         self._check_not_saved(f"bus {name!r}")
         bus_id = self._next_bus_id
         self._next_bus_id += 1
         self._bus_ids[name] = bus_id
         bus = ac_bus(bus_id, name)
+        if base_voltage is not None:
+            bus["base_voltage"] = base_voltage
         if area is not None:
             bus["area"] = self._area_ids[area]
         if load_zone is not None:
@@ -394,21 +404,7 @@ class SiennaSystemBuilder:
         g: float = 0.0,
     ) -> None:
         self._check_not_saved(f"Line {name!r}")
-        from_id = self._bus_ids[from_bus]
-        to_id = self._bus_ids[to_bus]
-        endpoint_key = (from_id, to_id)
-        if endpoint_key not in self._arc_by_endpoints:
-            arc_id = self._next_id()
-            self._arcs.append(
-                {
-                    "sienna_type": "Arc",
-                    "id": arc_id,
-                    "from_id": from_id,
-                    "to_id": to_id,
-                }
-            )
-            self._arc_by_endpoints[endpoint_key] = arc_id
-        arc_id = self._arc_by_endpoints[endpoint_key]
+        arc_id = self._arc_id(from_bus, to_bus)
         self._lines.append(
             {
                 "sienna_type": "Line",
@@ -428,6 +424,152 @@ class SiennaSystemBuilder:
                 "angle_limits": {"min": -1.5707963267948966, "max": 1.5707963267948966},
             }
         )
+
+    def add_transformer(
+        self,
+        name: str,
+        from_bus: str,
+        to_bus: str,
+        rating: float,
+        r: float = 0.0,
+        x: float = 0.0,
+        tap: float = 1.0,
+    ) -> None:
+        """A TwoWindingTransformer and the TransformerCircuit that holds its electrical data.
+
+        Both base voltages come from the two buses, which is what a voltage step means.
+        """
+        self._check_not_saved(f"TwoWindingTransformer {name!r}")
+        circuit_id = self._next_id()
+        self._transformer_circuits.append(
+            {
+                "sienna_type": "TransformerCircuit",
+                "id": circuit_id,
+                "available": True,
+                "arc": self._arc_id(from_bus, to_bus),
+                "r": r,
+                "x": x,
+                "tap": tap,
+                "rating": rating,
+                "base_power": 100.0,
+                "power_units": "COMPONENT_BASE",
+                "base_voltage_primary": self._base_voltage(from_bus),
+                "base_voltage_secondary": self._base_voltage(to_bus),
+            }
+        )
+        self._transformers.append(
+            {
+                "sienna_type": "TwoWindingTransformer",
+                "id": self._next_id(),
+                "name": name,
+                "circuit": circuit_id,
+            }
+        )
+
+    def set_transformer_circuit(self, name: str, circuit_id: int) -> None:
+        """Point one transformer at a circuit id, which lets a test state a missing one."""
+        self._check_not_saved(f"circuit for TwoWindingTransformer {name!r}")
+        self._find_transformer(name)["circuit"] = circuit_id
+
+    def set_transformer_tap(self, name: str, tap: float) -> None:
+        self._check_not_saved(f"tap for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["tap"] = tap
+
+    def set_transformer_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["power_units"] = power_units
+
+    def set_transformer_parameter_units(self, name: str, parameter_units: str) -> None:
+        self._check_not_saved(f"parameter_units for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["parameter_units"] = parameter_units
+
+    def set_transformer_base_power(self, name: str, base_power: float) -> None:
+        self._check_not_saved(f"base_power for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["base_power"] = base_power
+
+    def set_transformer_alpha(self, name: str, alpha: float) -> None:
+        """The phase shift of the circuit, in radians, which PyPSA holds in degrees."""
+        self._check_not_saved(f"alpha for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["alpha"] = alpha
+
+    def set_transformer_arc(self, name: str, arc_id: int) -> None:
+        """Point the circuit at an arc id, which lets a test state one the document has not."""
+        self._check_not_saved(f"arc for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)["arc"] = arc_id
+
+    def set_transformer_base_voltage(self, name: str, field: str, base_voltage: float) -> None:
+        """One base voltage of the circuit, which a test can set apart from the bus voltage."""
+        self._check_not_saved(f"{field} for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)[field] = base_voltage
+
+    def set_transformer_magnetizing_shunt(self, name: str, real: float, imag: float) -> None:
+        self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
+        self._find_transformer(name)["magnetizing_shunt"] = {"real": real, "imag": imag}
+
+    def set_transformer_magnetizing_shunt_part(self, name: str, field: str, value: float) -> None:
+        """One part of the shunt alone, which SiennaSchemas allows, as both parts are optional."""
+        self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
+        self._find_transformer(name)["magnetizing_shunt"] = {field: value}
+
+    def drop_transformer_circuit_field(self, name: str, field: str) -> None:
+        """Take one optional field out of the circuit, so the document states nothing for it."""
+        self._check_not_saved(f"{field} for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name).pop(field, None)
+
+    def add_unnamed_transformer_circuit(self, from_bus: str, to_bus: str, rating: float) -> None:
+        """A TransformerCircuit that no TwoWindingTransformer names, which reaches no table."""
+        self._check_not_saved("an unnamed TransformerCircuit")
+        self._transformer_circuits.append(
+            {
+                "sienna_type": "TransformerCircuit",
+                "id": self._next_id(),
+                "available": True,
+                "arc": self._arc_id(from_bus, to_bus),
+                "r": 0.0,
+                "x": 0.0,
+                "tap": 1.0,
+                "rating": rating,
+                "base_power": 100.0,
+                "power_units": "COMPONENT_BASE",
+                "base_voltage_primary": self._base_voltage(from_bus),
+                "base_voltage_secondary": self._base_voltage(to_bus),
+            }
+        )
+
+    def _find_transformer(self, name: str) -> dict[str, Any]:
+        for transformer in self._transformers:
+            if transformer["name"] == name:
+                return transformer
+        raise KeyError(f"no TwoWindingTransformer {name!r} added yet")
+
+    def _find_transformer_circuit(self, name: str) -> dict[str, Any]:
+        circuit_id = self._find_transformer(name)["circuit"]
+        for circuit in self._transformer_circuits:
+            if circuit["id"] == circuit_id:
+                return circuit
+        raise KeyError(f"no TransformerCircuit of TwoWindingTransformer {name!r} added yet")
+
+    def _base_voltage(self, bus: str) -> float:
+        for row in self._buses:
+            if row["name"] == bus:
+                return float(row["base_voltage"])
+        raise KeyError(f"no bus {bus!r} added yet")
+
+    def _arc_id(self, from_bus: str, to_bus: str) -> int:
+        """The Arc between two buses, which several branches of the same pair share."""
+        endpoints = (self._bus_ids[from_bus], self._bus_ids[to_bus])
+        if endpoints not in self._arc_by_endpoints:
+            arc_id = self._next_id()
+            self._arcs.append(
+                {
+                    "sienna_type": "Arc",
+                    "id": arc_id,
+                    "from_id": endpoints[0],
+                    "to_id": endpoints[1],
+                }
+            )
+            self._arc_by_endpoints[endpoints] = arc_id
+        return self._arc_by_endpoints[endpoints]
 
     def add_link(
         self, name: str, from_bus: str, to_bus: str, p_nom: float, efficiency: float
@@ -721,6 +863,11 @@ class SiennaSystemBuilder:
             sections["arcs"] = self._arcs
         if self._lines:
             sections["lines"] = self._lines
+        if self._transformers:
+            sections["transformers"] = self._transformers
+        # A circuit that no transformer names is a document of its own, so it needs its own gate.
+        if self._transformer_circuits:
+            sections["transformer_circuits"] = self._transformer_circuits
         if self._links:
             sections["links"] = self._links
         if self._unknown:

@@ -41,13 +41,17 @@ system does not hold is a thing that no SiennaSchemas 0.2 type or field can hold
 
 CEN publishes the model on the page
 [Programación Mensual 2026](https://www.coordinador.cl/operacion/documentos/estudios-de-la-programacion-de-la-operacion/programacion-mensual/2026-programacion-mensual/).
-The site does a browser check, so a download with `curl` gets HTTP 403. Use a web browser.
+The page and the archive both answer `curl`. Each month has its own archive, and the page
+gives the link of each one.
 
-1. Open the page.
-2. Download `PLEXOS202609_mensual.zip`, the PLEXOS archive of September 2026.
-3. Extract `Datos_Men202609.zip` from that archive.
-4. Extract all of `Datos_Men202609.zip` into `case_study_inputs/cen-po12meses-2026-09/`.
-5. You do not need `Res_Men202609.zip`. It holds the PLEXOS solution, and the translator does not read it.
+1. Download `PLEXOS202609_mensual.zip`, the PLEXOS archive of September 2026:
+   ```bash
+   curl -L -o PLEXOS202609_mensual.zip \
+     https://www.coordinador.cl/wp-content/uploads/2026/10/PLEXOS202609_mensual.zip
+   ```
+2. Extract `Datos_Men202609.zip` from that archive.
+3. Extract all of `Datos_Men202609.zip` into `case_study_inputs/cen-po12meses-2026-09/`.
+4. You do not need `Res_Men202609.zip`. It holds the PLEXOS solution, and the translator does not read it.
 
 | | |
 | --- | --- |
@@ -198,7 +202,7 @@ The run takes about 5 minutes. It writes `outputs/system.json`, the time series 
 | 241 `Node` objects | 241 `ACBus` |
 | 2 `Region` objects | 2 `Area` |
 | 16 `Zone` objects | 16 `LoadZone`, which each bus names |
-| 340 `Line` objects | 340 `Line`. 339 state a reactance, and one states none. |
+| 340 `Line` objects | 273 `Line`, and 67 `TwoWindingTransformer` with a `TransformerCircuit` each. 272 lines and all 67 circuits state a reactance, and one line states none. |
 | 420 `Load` objects | 420 `PowerLoad`, with a peak of 14,093 MW in all |
 | 766 thermal `Generator` objects | 766 `ThermalStandard` |
 | 1,170 solar, wind and hydro `Generator` objects with no head `Storage` | 1,169 `RenewableDispatch`. One unit states a capacity of 0 MW. |
@@ -209,7 +213,7 @@ The run takes about 5 minutes. It writes `outputs/system.json`, the time series 
 | 13 `Reserve` objects | 3 `OnlineReserve`, with 1,192 service associations. All 13 reach `extensions.json`. |
 | The data files | 1,840 time series |
 
-The numbers come from tz-oss-interop with pull request #176, and Polars 2.0.0.
+The numbers come from tz-oss-interop with pull request #184, and Polars 2.0.0.
 
 ### The PLEXOS rules that the translation applies
 
@@ -232,6 +236,7 @@ of this model.
 | A data file that states one object twice for the same date gives the first row in the file, with a warning. | `Var_GenRatingRoR.csv` states `SAN_ANDRES` twice for the first four weeks. The unit takes 3.79, 4.15, 3.85 and 3.65 MW, and each run gives the same series. |
 | A unit written `m³` is the same unit as `m3`. | The `Efficiency Incr` of the 58 turbines, in `MW/m³/s`, gives their `conversion_factor`. |
 | Every `Storage` of a cascade is a reservoir. | 67 reservoirs, joined by their turbines and routes |
+| A `Line` that states an impedance, and whose two `Node` objects each state a `Voltage` and state a different one, steps voltage, so it becomes a `TwoWindingTransformer` and its `TransformerCircuit`. A `Line` that states no impedance becomes a `TwoTerminalGenericHVDCLine`, whatever the two voltages are. | 67 of the 340 lines. 21 step 220/110 kV, 12 step 500/220 kV, and the other 34 step one of 14 further pairs. Every one of the 340 lines states an impedance, so this model holds no `TwoTerminalGenericHVDCLine`. Five nodes state no `Voltage`, so their bus takes the default of 1 kV, and the 12 lines that end on one of those nodes stay `Line`. |
 
 ### No forced outage in `MT_base4s`
 

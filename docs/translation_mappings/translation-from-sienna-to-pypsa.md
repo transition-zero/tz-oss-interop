@@ -420,12 +420,80 @@ line. PyPSA holds one total for each. The translator adds the two ends together.
 A line with no `angle_limits` keeps PyPSA's unbounded default.
 
 The translator takes the `v_nom` of the `bus0` end only. A line whose two ends are at
-different voltages therefore gets a wrong impedance. Such a branch is a transformer, and
-this translator does not handle a transformer.
+different voltages therefore gets a wrong impedance. Such a branch is a transformer, which
+[the section below](#twowindingtransformer-and-transformercircuit--transformer) covers.
 
 Four fields come from the sidecar. A line that reaches the translator without a sidecar
 record gets `length = 0.0` and `num_parallel = 1.0`, and the report says nothing about
 either. Check the length of each line if you plan to use it.
+
+## `TwoWindingTransformer` and `TransformerCircuit` → `Transformer`
+
+A `TwoWindingTransformer` states its name, and the `TransformerCircuit` that its `circuit`
+field names holds the electrical data. The two become one PyPSA transformer.
+
+Both forms state the impedance per unit, over the same voltage base, so the conversion is
+the ratio of the two power bases alone. Sienna states it per unit of the `base_power` of the
+circuit. PyPSA states it per unit of `s_nom`. The voltage cancels, and no voltage enters the
+formula. A circuit states `power_units` as `COMPONENT_BASE` or leaves it out. A circuit that
+states another value is left out, and the report names it.
+
+| PyPSA field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `TwoWindingTransformer.name` | `direct` |
+| `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
+| `s_nom` | MVA | `rating` × `base_power` | `derived` |
+| `r` | per unit of `s_nom` | `r` × `s_nom` ÷ `base_power` | `derived` |
+| `x` | per unit of `s_nom` | `x` × `s_nom` ÷ `base_power` | `derived` |
+| `tap_ratio` | | `tap` | `direct` |
+| `phase_shift` | degrees | `alpha`, which the circuit states in radians | `derived` |
+| `active` | | `available` | `direct` |
+| `num_parallel` | | `extensions.num_parallel` of the `transformer` record. If absent, `1.0`. | `sidecar` or `default` |
+| `s_nom_extendable` | | `extensions.s_nom_extendable` of the `transformer` record | `sidecar` |
+| `s_nom_min` | MVA | `rating` × `base_power`, for an extendable transformer only. | `derived` |
+
+SiennaSchemas 0.2 makes `tap`, `alpha`, `r`, `x` and `base_power` optional, and states the
+default of each one. A document that leaves the key out therefore states that default, and
+the translator reads it from SiennaSchemas rather than from a value of its own.
+
+PyPSA takes the voltage of a transformer from its two buses, so `base_voltage_primary` and
+`base_voltage_secondary` have no PyPSA field. The report states each one as not mapped,
+whether the circuit states it or not. A base voltage the bus of that winding does not hold
+leaves the whole transformer out, which the list below states.
+
+The `magnetizing_shunt` of the transformer has no PyPSA field either, and the report states
+it as not mapped. PyPSA holds the shunt of a transformer as `g` and `b` at the midpoint of
+its model, and `shunt_location` names one winding, so a one-sided shunt has no PyPSA home.
+The console warns about each transformer that states a shunt with a part that is not zero,
+because the network then holds no magnetising demand for that transformer.
+
+PyPSA states neither a carrier nor a length on a transformer. A stated one of either travels
+on to the PyPSA sidecar, under the `transformer` kind.
+
+Five kinds of transformer are left out, and the report names each one:
+
+- a transformer whose `circuit` names a `TransformerCircuit` that the document does not state.
+  A `TransformerCircuit` that no transformer names is left out too, and the report names it by
+  its id, because the type states no name;
+- a circuit that states `parameter_units` as anything but `COMPONENT_BASE`. That field is the
+  basis of `r` and `x` alone, and an ohm read as a per-unit value is wrong by orders of
+  magnitude;
+- a circuit that states a base power of zero. The rating is a fraction of the base power, so
+  a base power of zero gives an `s_nom` of zero, which no per-unit impedance divides by;
+- a transformer that states a rating of zero. PyPSA states the impedance per unit of `s_nom`,
+  and a rating of zero gives an `s_nom` of zero, which no per-unit value divides by. Such a
+  transformer carries no power either way;
+- a circuit that states a base voltage the bus of that winding does not hold. PyPSA states the
+  impedance of a transformer per unit of `s_nom` over the voltage base of its two buses, and
+  the circuit states its own over `base_power` and its own base voltages. The two voltage bases
+  cancel only where they agree, so the ratio of the two power bases is the whole conversion for
+  a circuit that states the voltage of its buses, and is wrong by the square of the voltage
+  ratio for a circuit that states another voltage. The translator leaves such a transformer out
+  rather than write a per-unit value on a base the network does not hold.
+
+A circuit whose `arc` names an `Arc` the document does not state, or whose `Arc` names a bus
+the document does not state, never reaches this mapping: the document reader leaves out a row
+that refers to no row it keeps, which leaves the transformer with no circuit.
 
 ## `TwoTerminalGenericHVDCLine` → `Link`
 
@@ -860,7 +928,6 @@ name one.
 | `Line.rating_b` and `.rating_c` | Nothing applies the emergency ratings. The dispatch can use the normal rating only. |
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
-| A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
 
 ### Parts that the report names

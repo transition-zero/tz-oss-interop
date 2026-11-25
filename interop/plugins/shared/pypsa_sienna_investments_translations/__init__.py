@@ -60,7 +60,6 @@ from ._supply import (
     express_operation_cost,
     fill_supply_defaults,
 )
-from ._topology import AREA_NAME, build_topology_mapping_translations, build_topology_source_table
 
 __all__ = [
     "GENERATOR_SOURCE",
@@ -78,7 +77,6 @@ __all__ = [
     "PortfolioTable",
     "Schema",
     "build_expansion_skips",
-    "AREA_NAME",
     "build_carbon_cap_skips",
     "constraint_source",
     "FUEL_COL",
@@ -116,8 +114,6 @@ __all__ = [
     "express_operation_cost",
     "build_storage_technology_translations",
     "build_supply_translations",
-    "build_topology_mapping_translations",
-    "build_topology_source_table",
     "fill_storage_technology_defaults",
     "fill_supply_defaults",
 ]

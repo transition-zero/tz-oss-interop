@@ -22,7 +22,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "reactive_power" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "rating" set to 200.0
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "power_factor" set to 1.0
-    And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "reactive_power_limits" set to null
+    And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" without field "reactive_power_limits"
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "operation_cost.cost_type" set to "RENEWABLE"
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 0.0
     # VALUE_DERIVED decisions

@@ -51,7 +51,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.time_limits` |  | min_up_time and min_down_time both zero; time_limits set to null | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.up_time_before` = 0.0 | `sienna.ThermalStandard.ccgt_1.time_at_status` = 10000.0 | up_time_before=0; defaulted to 10000.0 (Sienna schema default) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # Verify values in output JSON
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "time_limits" set to null
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" without field "time_limits"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "time_at_status" set to 10000.0
 
   Scenario: generator with ramp limits produces populated ramp_limits struct
@@ -66,14 +66,14 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.coal_1.ramp_limit_up` = 0.3 | `sienna.ThermalStandard.coal_1.ramp_limits` = {'up': 0.5, 'down': 0.3333333333333333} | effective_p_nom * ramp_limit / 60 min (pu/snapshot -> MW/min) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
   @slow
-  Scenario: generator without ramp columns produces null ramp_limits
+  Scenario: generator without ramp columns states no ramp_limits
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "ocgt_1" on "bus_1" carrier "OCGT" p_nom 200.0
     And the network is saved as "inputs/no_ramp.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/no_ramp.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ocgt_1" having "ramp_limits" set to null
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ocgt_1" without field "ramp_limits"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ocgt_1.ramp_limits` |  | ramp_limit_up/down absent in PyPSA network; ramp_limits set to null | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
   Scenario: generator with p_max_pu time series produces time_series_metadata row

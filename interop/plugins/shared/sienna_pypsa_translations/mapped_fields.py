@@ -22,6 +22,7 @@ from interop.core.extensions import (
     LineExtension,
     LoadExtension,
     StorageExtension,
+    TransformerExtension,
 )
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
@@ -37,6 +38,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALinkCol,
     PyPSALoadCol,
     PyPSAStorageUnitCol,
+    PyPSATransformerCol,
 )
 
 
@@ -178,6 +180,14 @@ LINE_CARRIED: tuple[MappedField, ...] = (
     MappedField("s_nom_extendable", PyPSALineCol.S_NOM_EXTENDABLE),
 )
 LINE_MAPPED_FIELDS = build_field_names(LineExtension, *LINE_CARRIED)
+
+# PyPSA states neither a carrier nor a length on a transformer, so each relays into the
+# sidecar alone.
+TRANSFORMER_CARRIED: tuple[MappedField, ...] = (
+    MappedField("num_parallel", PyPSATransformerCol.NUM_PARALLEL),
+    MappedField("s_nom_extendable", PyPSATransformerCol.S_NOM_EXTENDABLE),
+)
+TRANSFORMER_MAPPED_FIELDS = build_field_names(TransformerExtension, *TRANSFORMER_CARRIED)
 
 LINK_CARRIED: tuple[MappedField, ...] = (
     MappedField("carrier", PyPSALinkCol.CARRIER),

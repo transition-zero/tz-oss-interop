@@ -172,6 +172,12 @@ class EmitSiennaSystemJson(Sink):
             bus_ids,
             arc_ids,
         )
+        circuit_components = EmitSiennaSystemJson._build_branch_components(
+            state.destination_tables.get(SiennaComponent.TRANSFORMER_CIRCUIT), bus_ids, arc_ids
+        )
+        transformer_components = EmitSiennaSystemJson._build_plain_components(
+            state.destination_tables.get(SiennaComponent.TWO_WINDING_TRANSFORMER)
+        )
         components: dict[str, Any] = {}
         if area_components:
             components[SiennaComponent.AREA] = area_components
@@ -203,6 +209,9 @@ class EmitSiennaSystemJson(Sink):
             components[SiennaComponent.LINE] = line_components
         if hvdc_components:
             components[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = hvdc_components
+        if circuit_components:
+            components[SiennaComponent.TRANSFORMER_CIRCUIT] = circuit_components
+            components[SiennaComponent.TWO_WINDING_TRANSFORMER] = transformer_components
         for service_type in _SERVICE_TYPES:
             service_components = _list_rows(state.destination_tables.get(service_type))
             if service_components:

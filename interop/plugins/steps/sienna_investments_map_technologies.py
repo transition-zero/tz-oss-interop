@@ -171,7 +171,7 @@ class SiennaInvestmentsMapTechnologies(TranslationStep):
         self._map_demand(state, area_by_bus, mapper)
         self._map_carbon_caps(state, mapper, found)
         fleet = self._build_fleet(state, area_by_bus, found)
-        mapper.map_supplemental_attributes(state, fleet, buses)
+        mapper.map_supplemental_attributes(state, fleet)
         state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = build_portfolio_financial_data(
             base_year
         )

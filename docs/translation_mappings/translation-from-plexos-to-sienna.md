@@ -28,7 +28,7 @@ what you get.
 | [`Zone`](#zone--loadzone) | `LoadZone` |
 | [Region `Load` property](#region-load--powerload) | `PowerLoad` |
 | [`Load` object](#load-object--powerload) | `PowerLoad` |
-| [`Line`](#line--line-or-twoterminalgenerichvdcline) | `Line` if it has impedance, or `TwoTerminalGenericHVDCLine` if it has none |
+| [`Line`](#line--line-transformer-or-twoterminalgenerichvdcline) | `Line` if it has impedance, a `TwoWindingTransformer` and a `TransformerCircuit` if it has impedance and steps voltage, or `TwoTerminalGenericHVDCLine` if it has no impedance |
 | [`Generator`](#generator--thermalstandard), thermal | `ThermalStandard` |
 | [`Generator`](#generator--renewabledispatch), renewable | `RenewableDispatch`, or `RenewableNonDispatch` where your mappings file says so |
 | [`Generator`](#hydro--hydroturbine-and-hydroreservoir), reservoir hydro | `HydroTurbine`, or `HydroDispatch` where your mappings file says so |
@@ -41,7 +41,7 @@ what you get.
 | [`Reserve`](#reserve--onlinereserve-or-offlinereserve) | `OnlineReserve`, or `OfflineReserve` for a replacement reserve, and one service association for each unit that supplies it. The record also reaches `extensions.json`. |
 | [`Forced Outage Rate` and `Mean Time to Repair`](#forced-outage--geometricdistributionforcedoutage) on a `Generator` or a `Battery` | A `GeometricDistributionForcedOutage` supplemental attribute of the unit |
 | Region `VoLL` | Nothing. `decisions.md` names it as dropped, because Sienna has no home for a region `VoLL`. |
-| `Interface`, `Transformer`, `Constraint`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
+| `Interface`, `Transformer`, `Constraint`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. A `Line` that steps voltage does become a Sienna transformer; an object of the PLEXOS `Transformer` class does not. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -231,7 +231,7 @@ the run writes one warning for each case:
 - Another load already has the name of the `Load` object. Sienna gives each `PowerLoad` one
   name, and a region load or a node load comes first.
 
-## `Line` → `Line` or `TwoTerminalGenericHVDCLine`
+## `Line` → `Line`, transformer or `TwoTerminalGenericHVDCLine`
 
 The properties of the line control which component it becomes:
 
@@ -239,6 +239,7 @@ The properties of the line control which component it becomes:
 | --- | --- |
 | It has flow limits and no impedance | `TwoTerminalGenericHVDCLine` |
 | It has a `Resistance` value or a `Reactance` value | `Line` |
+| It has impedance, and its two Nodes state different voltages | A `TwoWindingTransformer` and a `TransformerCircuit` |
 | It has an HVDC mark | `TwoTerminalGenericHVDCLine` |
 
 A line must have a `Node From` membership and a `Node To` membership. A line without both
@@ -257,6 +258,49 @@ connects nothing, so the translator leaves it out and records it.
 | `angle_limits` | rad | `(-1.5708, 1.5708)`, because PLEXOS states no voltage-angle limit | `default` |
 | `available` | | `True` | `default` |
 | `Wheeling Charge` | | A Sienna `Line` prices no flow. | `dropped` |
+
+### Lines that step voltage → `TwoWindingTransformer` and `TransformerCircuit`
+
+PowerSystems.jl refuses a `Line` whose two endpoint buses hold different base voltages, and
+says the data looks like transformer data. So a line with impedance whose two Nodes state
+different voltages becomes a transformer.
+
+SiennaSchemas 0.2 splits a transformer in two. The `TwoWindingTransformer` holds the name and
+names its circuit. The `TransformerCircuit` holds the electrical data.
+
+Both Nodes must state a `Voltage`. A Node that states none takes the Sienna default of 1.0 kV,
+so a 220 kV Node joined to such a Node would read as a 220 to 1 transformer that your model
+never stated. Any difference between the two stated voltages makes a transformer; there is no
+tolerance.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `Line.name`, on the `TwoWindingTransformer` | `direct` |
+| `circuit` | | The id of the `TransformerCircuit` | `derived` |
+| `arc` | | The `Arc` of `Node From` and `Node To` | `derived` |
+| `r` | pu | `Resistance` × 100 ÷ the `Node From` voltage squared | `derived` |
+| `x` | pu | `Reactance` × 100 ÷ the `Node From` voltage squared | `derived` |
+| `rating` | pu | `Max Rating`, or `Max Flow` where the model states no rating, in per unit on 100 MVA | `derived` |
+| `base_voltage_primary` | kV | The `Voltage` of `Node From` | `derived` |
+| `base_voltage_secondary` | kV | The `Voltage` of `Node To` | `derived` |
+| `tap` | | `1.0`, because PLEXOS states no tap position | `default` |
+| `available` | | `True` | `default` |
+| `power_units` | | `COMPONENT_BASE` | `default` |
+| `base_power` | MVA | `100.0`, the system base | `default` |
+| `Wheeling Charge` | | A Sienna transformer prices no flow. | `dropped` |
+
+The impedance converts against the `Node From` voltage, which is the base a `Line` uses. So one
+line gives the same `r` and the same `x` whether it reads as a `Line` or as a transformer, and
+`base_voltage_primary` states that base.
+
+`magnetizing_shunt`, `shunt_location` and `admittance_units` are left out, so each takes its
+schema default.
+
+The `Length` and the `Circuits` of the line travel as a `transformer` record in
+`extensions.json`, because the `TransformerCircuit` holds neither.
+
+The Sienna to PyPSA leg reads the transformer back as a PyPSA `Transformer`; see
+[the Sienna to PyPSA mapping](translation-from-sienna-to-pypsa.md#twowindingtransformer-and-transformercircuit--transformer).
 
 ### Lines without impedance → `TwoTerminalGenericHVDCLine`
 
@@ -741,7 +785,7 @@ energy than your model gives it.
 | A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
 | Region `VoLL` | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
-| `Transformer` | The translator does not carry it. |
+| The PLEXOS `Transformer` class | The translator does not carry it. A `Line` that steps voltage does become a Sienna transformer; an object of the `Transformer` class does not. |
 | `Constraint` | The record reaches `extensions.json`, but nothing applies the custom constraints, which include the RPS targets and the emission targets. |
 | `Waterway` properties | `Max Flow`, `Min Flow` and the penalties are lost, because Sienna states no route between two reservoirs. The route itself reaches `upstream_reservoirs`. |
 | `Decision Variable` | The translator does not carry it. |

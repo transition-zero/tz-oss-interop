@@ -5,6 +5,11 @@ envelope and leave each component as a plain mapping, so this module also valida
 row with the SDK class of its type. The SDK ignores a key that no class names, so it also
 compares each row with the fields of its class.
 
+A pydantic class takes a null on an optional field and the strict JSON Schema bundle does
+not, so a whole document also goes through the bundle, which is what the Sienna stack reads.
+The SDK leaves ``BUNDLE_DIR`` and ``validate_source`` out of the ``__all__`` of its
+``document`` module, so the import of the two needs the ignore that stands on it.
+
 "The written Sienna system" is ``outputs/system.json`` and "the written Sienna portfolio"
 is ``outputs/portfolio.json``, the paths every pipeline writes by default.
 """
@@ -17,7 +22,12 @@ from functools import cache
 from importlib.resources import files
 from typing import Any
 
-from power_openapi_models.document import PortfolioDocument, SystemDocument
+from power_openapi_models.document import (  # type: ignore[attr-defined]
+    BUNDLE_DIR,
+    PortfolioDocument,
+    SystemDocument,
+    validate_source,
+)
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pytest_bdd import parsers, then
 
@@ -125,10 +135,27 @@ def list_id_problems(document: dict[str, Any]) -> list[str]:
     ]
 
 
+def list_bundle_problems(
+    document: dict[str, Any], document_class: type[SystemDocument | PortfolioDocument]
+) -> list[str]:
+    """What the strict JSON Schema bundle of SiennaSchemas 0.2 refuses in the document.
+
+    The pydantic classes take a null on an optional field and the bundle does not, so this
+    is the check that matches what the Sienna stack reads. The bundle is the one the pinned
+    ``power-openapi-models`` ships, named by version, so a newer release does not move it.
+    """
+    try:
+        validate_source(document, SCHEMA_VERSION, document_class.__name__, BUNDLE_DIR)
+    except ValueError as error:
+        return [f"bundle: {line.strip()}" for line in str(error).splitlines()[1:]]
+    return []
+
+
 def list_document_problems(
     document: dict[str, Any], document_class: type[SystemDocument | PortfolioDocument]
 ) -> list[str]:
     problems = list_envelope_problems(document, document_class)
+    problems.extend(list_bundle_problems(document, document_class))
     components = document.get("components", {})
     if not isinstance(components, dict):
         return problems

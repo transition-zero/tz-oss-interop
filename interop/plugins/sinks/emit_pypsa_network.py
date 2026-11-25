@@ -24,6 +24,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALoadCol,
     PyPSASnapshotWeightingCol,
     PyPSAStorageUnitCol,
+    PyPSATransformerCol,
     ReverseTimeSeriesMetadataCol,
 )
 from interop.plugins.shared.pypsa_time_series import find_snapshot_window
@@ -93,6 +94,7 @@ def build_network(
     storage_units = state.destination_tables.get(PyPSADestinationTable.STORAGE_UNITS)
     loads = state.destination_tables.get(PyPSADestinationTable.LOADS)
     lines = state.destination_tables.get(PyPSADestinationTable.LINES)
+    transformers = state.destination_tables.get(PyPSADestinationTable.TRANSFORMERS)
     links = state.destination_tables.get(PyPSADestinationTable.LINKS)
     referenced = _referenced_bus_names(
         [
@@ -100,6 +102,7 @@ def build_network(
             (storage_units, [PyPSAStorageUnitCol.BUS]),
             (loads, [PyPSALoadCol.BUS]),
             (lines, [PyPSALineCol.BUS0, PyPSALineCol.BUS1]),
+            (transformers, [PyPSATransformerCol.BUS0, PyPSATransformerCol.BUS1]),
             (links, [PyPSALinkCol.BUS0, PyPSALinkCol.BUS1]),
             (links, _list_named_ports(links)),
         ]
@@ -109,6 +112,7 @@ def build_network(
     _add_storage_units(network, storage_units)
     _add_loads(network, loads)
     _add_lines(network, lines)
+    _add_transformers(network, transformers)
     _add_links(network, links)
     cache = series_cache if series_cache is not None else {}
     if metadata is not None and metadata.height > 0:
@@ -261,6 +265,33 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
             PyPSALineCol.V_ANG_MAX,
             PyPSALineCol.S_NOM_EXTENDABLE,
             PyPSALineCol.S_NOM_MIN,
+        ),
+    )
+
+
+def _add_transformers(network: pypsa.Network, transformers: pl.DataFrame | None) -> None:
+    if transformers is None:
+        return
+    _add_in_bulk(
+        network,
+        PyPSAComponent.TRANSFORMER,
+        transformers,
+        PyPSATransformerCol.NAME,
+        required=(
+            PyPSATransformerCol.BUS0,
+            PyPSATransformerCol.BUS1,
+            PyPSATransformerCol.R,
+            PyPSATransformerCol.X,
+            PyPSATransformerCol.S_NOM,
+            PyPSATransformerCol.TAP_RATIO,
+            PyPSATransformerCol.PHASE_SHIFT,
+            PyPSATransformerCol.NUM_PARALLEL,
+            PyPSATransformerCol.ACTIVE,
+        ),
+        # Null round-trip fields are absent from the Sienna source; let PyPSA default them.
+        optional=(
+            PyPSATransformerCol.S_NOM_EXTENDABLE,
+            PyPSATransformerCol.S_NOM_MIN,
         ),
     )
 
