@@ -447,11 +447,13 @@ Those files are the product. The last two carry values that a Sienna component s
 field for, static or varying, so the sidecar names the file each one rides in.
 
 The system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
-`RenewableDispatch`, 245 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
-components, over 720 hourly snapshots, with 412 time-series associations.
+`RenewableDispatch`, 245 `EnergyReservoirStorage`, 9 `TwoTerminalGenericHVDCLine` and 3
+`OnlineReserve` components, over 720 hourly snapshots, with 415 time-series associations.
 
 All seven CAISO reserves reach `extensions.json`, and the six whose requirement changes each
-snapshot reach `reserves.parquet` beside it. Nothing applies them.
+snapshot reach `reserves.parquet` beside it. Three of the seven also become an `OnlineReserve`
+of the system, `LoadFollowingDown`, `Reg Down` and `Reg Up`, with 670 service associations in
+all.
 
 To prove that the system dispatches, run `translate` a second time over it:
 

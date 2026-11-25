@@ -143,8 +143,8 @@ That run writes four files, and all four are the product: `outputs/system.json`,
 companion `outputs/system_time_series_storage.h5`, `outputs/extensions.json`, and
 `outputs/generators.parquet`. The parquet file holds each generator value that changes from
 snapshot to snapshot, and a record in the sidecar names it. The system holds 12 `ACBus`,
-13 `Arc`, 5 `Area`, 12 `PowerLoad`, 252 `ThermalStandard`, 240 `RenewableDispatch`, 31
-`HydroDispatch`, 158 `EnergyReservoirStorage` and 16 `TwoTerminalGenericHVDCLine`
+13 `Arc`, 5 `Area`, 12 `PowerLoad`, 252 `ThermalStandard`, 240 `RenewableDispatch`, 55
+`HydroTurbine`, 134 `EnergyReservoirStorage` and 16 `TwoTerminalGenericHVDCLine`
 components.
 
 To make the PowerSystems.jl system, run `translate` a second time over those files:
@@ -314,9 +314,11 @@ what the rating allows over the month. We do not know yet why no inflow reaches 
 
 The demand result above does not depend on hydro, so it stands.
 
-**The Sienna path gives its hydro reservoirs no water.** Every `Natural Inflow` in this model
-is in cumec, which is water. The translation writes each of the 31 reservoir units as a
-`HydroDispatch` with an inflow of 0 MW, and `decisions.md` states the cause for each one.
+**The Sienna path gives its hydro units no water.** Every `Natural Inflow` in this model is
+in cumec, which is water, so the mapping cannot read it. `decisions.md` states that cause 52
+times, and states 64 times that a head `Storage` names a volume unit that is not
+megawatt-hours. So the system holds 55 `HydroTurbine` and no `HydroReservoir`, and nothing
+flows into the hydro fleet.
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
 this model states that SiennaSchemas holds no type and no field for.
 
