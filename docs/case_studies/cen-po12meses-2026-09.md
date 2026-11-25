@@ -41,13 +41,17 @@ system does not hold is a thing that no SiennaSchemas 0.2 type or field can hold
 
 CEN publishes the model on the page
 [Programación Mensual 2026](https://www.coordinador.cl/operacion/documentos/estudios-de-la-programacion-de-la-operacion/programacion-mensual/2026-programacion-mensual/).
-The site does a browser check, so a download with `curl` gets HTTP 403. Use a web browser.
+The page and the archive both answer `curl`. Each month has its own archive, and the page
+gives the link of each one.
 
-1. Open the page.
-2. Download `PLEXOS202609_mensual.zip`, the PLEXOS archive of September 2026.
-3. Extract `Datos_Men202609.zip` from that archive.
-4. Extract all of `Datos_Men202609.zip` into `case_study_inputs/cen-po12meses-2026-09/`.
-5. You do not need `Res_Men202609.zip`. It holds the PLEXOS solution, and the translator does not read it.
+1. Download `PLEXOS202609_mensual.zip`, the PLEXOS archive of September 2026:
+   ```bash
+   curl -L -o PLEXOS202609_mensual.zip \
+     https://www.coordinador.cl/wp-content/uploads/2026/10/PLEXOS202609_mensual.zip
+   ```
+2. Extract `Datos_Men202609.zip` from that archive.
+3. Extract all of `Datos_Men202609.zip` into `case_study_inputs/cen-po12meses-2026-09/`.
+4. You do not need `Res_Men202609.zip`. It holds the PLEXOS solution, and the translator does not read it.
 
 | | |
 | --- | --- |
