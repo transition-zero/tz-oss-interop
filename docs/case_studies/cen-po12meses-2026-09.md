@@ -236,7 +236,7 @@ of this model.
 | A data file that states one object twice for the same date gives the first row in the file, with a warning. | `Var_GenRatingRoR.csv` states `SAN_ANDRES` twice for the first four weeks. The unit takes 3.79, 4.15, 3.85 and 3.65 MW, and each run gives the same series. |
 | A unit written `m³` is the same unit as `m3`. | The `Efficiency Incr` of the 58 turbines, in `MW/m³/s`, gives their `conversion_factor`. |
 | Every `Storage` of a cascade is a reservoir. | 67 reservoirs, joined by their turbines and routes |
-| A `Line` between two `Node` objects that each state a `Voltage`, and state a different one, steps voltage, so it becomes a `TwoWindingTransformer` and its `TransformerCircuit`. | 67 of the 340 lines. 21 step 220/110 kV, 12 step 500/220 kV, and the other 34 step one of 14 further pairs. Five nodes state no `Voltage`, so their bus takes the default of 1 kV, and the 12 lines that end on one of those nodes stay `Line`. |
+| A `Line` that states an impedance, and whose two `Node` objects each state a `Voltage` and state a different one, steps voltage, so it becomes a `TwoWindingTransformer` and its `TransformerCircuit`. A `Line` that states no impedance becomes a `TwoTerminalGenericHVDCLine`, whatever the two voltages are. | 67 of the 340 lines. 21 step 220/110 kV, 12 step 500/220 kV, and the other 34 step one of 14 further pairs. Every one of the 340 lines states an impedance, so this model holds no `TwoTerminalGenericHVDCLine`. Five nodes state no `Voltage`, so their bus takes the default of 1 kV, and the 12 lines that end on one of those nodes stay `Line`. |
 
 ### No forced outage in `MT_base4s`
 
