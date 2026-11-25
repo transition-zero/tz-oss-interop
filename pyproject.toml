@@ -37,14 +37,14 @@ dependencies = [
     # 0.16.0 validates the time-series association rows against the SiennaSchemas
     # 0.4 wire contract, and rejects the `initial_timestamp` form that 0.14 and
     # 0.15 write, so a sidecar an older install wrote no longer reads back.
-    "infrastore>=0.14.1,<0.16",
+    "infrastore>=0.14.1,<0.18",
     "h5netcdf>=1.8.1",
     "requests>=2.34.2",
     "scipy>=1.11",
     "juliacall>=0.9.37",
     "pandas>=3.0.6",
     "pypsa>=1.4.0",
-    "power-openapi-models>=0.2.0,<0.3",
+    "power-openapi-models>=0.2.0,<0.6",
 ]
 
 [project.urls]
