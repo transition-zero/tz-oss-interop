@@ -197,6 +197,17 @@ Feature: Sienna to PyPSA Pipeline translates a TwoWindingTransformer to a PyPSA 
     And the file "decisions.md" contains "PyPSA holds the shunt of a transformer as g and b at the midpoint of its model"
     And the file "decisions.md" contains "0.01 + 0.02j"
 
+  Scenario: a magnetizing shunt that states one part alone still translates
+    Given a Sienna system
+    And the system contains a bus "high" at 220.0 kV
+    And the system contains a bus "low" at 110.0 kV
+    And the system contains a transformer "step_1" from "high" to "low" with rating 4.29 r 0.01 x 0.1
+    And the transformer "step_1" has a magnetizing shunt that states imag 0.02 alone
+    And the system is saved as "inputs/transformer_half_shunt.json"
+    When I run translate against "inputs/transformer_half_shunt.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 transformer
+    And the file "decisions.md" contains "0.02j"
+
   Scenario: a TransformerCircuit that no transformer names reaches the unheld report
     Given a Sienna system
     And the system contains a bus "high" at 220.0 kV

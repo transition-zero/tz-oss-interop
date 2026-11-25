@@ -501,6 +501,11 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
         self._find_transformer(name)["magnetizing_shunt"] = {"real": real, "imag": imag}
 
+    def set_transformer_magnetizing_shunt_part(self, name: str, field: str, value: float) -> None:
+        """One part of the shunt alone, which SiennaSchemas allows, as both parts are optional."""
+        self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
+        self._find_transformer(name)["magnetizing_shunt"] = {field: value}
+
     def drop_transformer_circuit_field(self, name: str, field: str) -> None:
         """Take one optional field out of the circuit, so the document states nothing for it."""
         self._check_not_saved(f"{field} for TwoWindingTransformer {name!r}")

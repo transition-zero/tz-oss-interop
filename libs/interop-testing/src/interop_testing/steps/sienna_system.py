@@ -508,6 +508,17 @@ def given_transformer_magnetizing_shunt(
     sienna_system_builder.set_transformer_magnetizing_shunt(name, real, imag)
 
 
+@given(
+    parsers.parse(
+        'the transformer "{name}" has a magnetizing shunt that states {field} {value:g} alone'
+    )
+)
+def given_transformer_magnetizing_shunt_part(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, value: float
+) -> None:
+    sienna_system_builder.set_transformer_magnetizing_shunt_part(name, field, value)
+
+
 @given(parsers.parse('the transformer "{name}" states no {field}'))
 def given_transformer_states_no_field(
     sienna_system_builder: SiennaSystemBuilder, name: str, field: str

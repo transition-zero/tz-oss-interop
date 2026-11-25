@@ -137,7 +137,7 @@ class TransformerReporter(SiennaToPypsaReporter):
                     SiennaComponent.TWO_WINDING_TRANSFORMER,
                     name,
                     SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT,
-                    _format_shunt(shunt),
+                    _build_shunt_value(shunt),
                 )
             ],
             note=_MAGNETIZING_SHUNT_NOTE,
@@ -155,10 +155,14 @@ class TransformerReporter(SiennaToPypsaReporter):
         )
 
 
-def _format_shunt(shunt: dict[str, Any] | None) -> str | None:
+def _build_shunt_value(shunt: dict[str, Any] | None) -> str | None:
     """A complex shunt as the report states it, or nothing where the transformer states none."""
     if shunt is None:
         return None
-    real = shunt[SiennaStructField.REAL]
-    imag = shunt[SiennaStructField.IMAG]
-    return f"{real} + {imag}j"
+    # SiennaSchemas gives both parts of a ComplexNumber the default None, so either can be absent.
+    parts = [
+        f"{shunt[field]}{suffix}"
+        for field, suffix in ((SiennaStructField.REAL, ""), (SiennaStructField.IMAG, "j"))
+        if shunt.get(field) is not None
+    ]
+    return " + ".join(parts) or None
