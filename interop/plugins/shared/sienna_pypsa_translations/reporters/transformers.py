@@ -40,10 +40,6 @@ _MAGNETIZING_SHUNT_NOTE = (
     "PyPSA holds the shunt of a transformer as g and b at the midpoint of its model, and "
     "shunt_location names one winding, so the shunt stays out rather than move"
 )
-_BASE_VOLTAGE_MISMATCH_NOTE = (
-    "the circuit states {attribute} {stated} kV and its bus states v_nom {bus_v_nom} kV, so "
-    "the per-unit impedance is on a voltage base the network does not hold"
-)
 
 
 class TransformerReporter(SiennaToPypsaReporter):
@@ -141,17 +137,6 @@ class TransformerReporter(SiennaToPypsaReporter):
                 )
             ],
             note=_MAGNETIZING_SHUNT_NOTE,
-        )
-
-    def record_base_voltage_mismatch(
-        self, name: str, attribute: str, stated: float, bus_v_nom: float
-    ) -> None:
-        """A base voltage that disagrees with the v_nom of the bus it belongs to."""
-        self._not_mapped(
-            sources=[self._circuit(name, attribute, stated, UNIT_KV)],
-            note=_BASE_VOLTAGE_MISMATCH_NOTE.format(
-                attribute=attribute, stated=stated, bus_v_nom=bus_v_nom
-            ),
         )
 
 

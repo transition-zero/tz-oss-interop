@@ -458,18 +458,19 @@ the translator reads it from SiennaSchemas rather than from a value of its own.
 
 PyPSA takes the voltage of a transformer from its two buses, so `base_voltage_primary` and
 `base_voltage_secondary` have no PyPSA field. The report states each one as not mapped,
-whether the circuit states it or not. Where a stated base voltage disagrees with the `v_nom`
-of its bus, the report names that too, because the per-unit impedance then sits on a voltage
-base the network does not hold.
+whether the circuit states it or not. A base voltage the bus of that winding does not hold
+leaves the whole transformer out, which the list below states.
 
 The `magnetizing_shunt` of the transformer has no PyPSA field either, and the report states
 it as not mapped. PyPSA holds the shunt of a transformer as `g` and `b` at the midpoint of
 its model, and `shunt_location` names one winding, so a one-sided shunt has no PyPSA home.
+The console warns about each transformer that states a shunt with a part that is not zero,
+because the network then holds no magnetising demand for that transformer.
 
 PyPSA states neither a carrier nor a length on a transformer. A stated one of either travels
 on to the PyPSA sidecar, under the `transformer` kind.
 
-Four kinds of transformer are left out, and the report names each one:
+Five kinds of transformer are left out, and the report names each one:
 
 - a transformer whose `circuit` names a `TransformerCircuit` that the document does not state.
   A `TransformerCircuit` that no transformer names is left out too, and the report names it by
@@ -481,7 +482,14 @@ Four kinds of transformer are left out, and the report names each one:
   a base power of zero gives an `s_nom` of zero, which no per-unit impedance divides by;
 - a transformer that states a rating of zero. PyPSA states the impedance per unit of `s_nom`,
   and a rating of zero gives an `s_nom` of zero, which no per-unit value divides by. Such a
-  transformer carries no power either way.
+  transformer carries no power either way;
+- a circuit that states a base voltage the bus of that winding does not hold. PyPSA states the
+  impedance of a transformer per unit of `s_nom` over the voltage base of its two buses, and
+  the circuit states its own over `base_power` and its own base voltages. The two voltage bases
+  cancel only where they agree, so the ratio of the two power bases is the whole conversion for
+  a circuit that states the voltage of its buses, and is wrong by the square of the voltage
+  ratio for a circuit that states another voltage. The translator leaves such a transformer out
+  rather than write a per-unit value on a base the network does not hold.
 
 A circuit whose `arc` names an `Arc` the document does not state, or whose `Arc` names a bus
 the document does not state, never reaches this mapping: the document reader leaves out a row

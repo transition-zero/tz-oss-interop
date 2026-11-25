@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import Any, ClassVar, NamedTuple
@@ -79,7 +80,10 @@ from interop.plugins.shared.translation_runner import (
     drop_skipped,
     filter_component,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_pypsa.split_links import LinkSplitter, add_reverse_series
+
+log = logging.getLogger(__name__)
 
 # The OSeMOSYS CapacityFactor of a line multiplies its static p_max_pu, which PyPSA's own
 # series replaces, so the sink scales the series by the static value.
@@ -95,6 +99,12 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
 _LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
 # The electrical data of a transformer sits on its circuit, so the events name that type.
 _CIRCUIT_TYPE = SiennaComponent.TRANSFORMER_CIRCUIT
+# PyPSA holds the shunt of a transformer at the midpoint of its model, so a stated shunt reaches
+# no column, and the console says which transformers lost one.
+_SHUNT_WARNING = (
+    "sienna-to-pypsa: %d transformers state a magnetizing shunt that PyPSA holds nowhere, so "
+    "each shunt is left out. Each one: %s"
+)
 
 
 class _BusLookup(NamedTuple):
@@ -107,6 +117,9 @@ class _BusLookup(NamedTuple):
 # The staged transformer row denormalises its Arc onto the two columns a line also uses.
 _BUS0 = SiennaTransformerCircuitCol.BUS0
 _BUS1 = SiennaTransformerCircuitCol.BUS1
+# The v_nom of the bus of each winding, which the step adds to the staged table.
+_BUS0_V_NOM = "_bus0_v_nom"
+_BUS1_V_NOM = "_bus1_v_nom"
 # Each optional circuit value the step reads as a number. SiennaSchemas states the default of
 # every one, so a document that leaves the key out still translates.
 _DEFAULTED_CIRCUIT_COLUMNS: tuple[str, ...] = (
@@ -190,6 +203,45 @@ _BASE_POWER_RULE = SkipRule(
         attribute_col=SiennaTransformerCircuitCol.BASE_POWER,
     ),
 )
+
+
+def _express_winding_matched(attribute: str, bus_v_nom: str) -> pl.Expr:
+    """Keep a winding whose circuit states no base voltage, or states the voltage of its bus."""
+    return (
+        pl.col(attribute).is_null()
+        | pl.col(bus_v_nom).is_null()
+        | (pl.col(attribute) == pl.col(bus_v_nom))
+    )
+
+
+# PyPSA states the impedance of a transformer per unit of s_nom over the voltage base of its
+# buses, and the circuit states its own over base_power and its own base voltages. The two
+# voltage bases cancel only where they agree, so a circuit that states another one is left out.
+_BASE_VOLTAGE_NOTE = (
+    "the circuit states base voltages of {primary} kV and {secondary} kV, and its two buses "
+    "state v_nom {bus0} kV and {bus1} kV, so the per-unit impedance of the circuit is on a "
+    "voltage base the network does not hold"
+)
+_BASE_VOLTAGE_RULE = SkipRule(
+    keep=_express_winding_matched(SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, _BUS0_V_NOM)
+    & _express_winding_matched(SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, _BUS1_V_NOM),
+    report=SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=SiennaComponent.TRANSFORMER_CIRCUIT,
+        name_col=SIENNA_NAME_COLUMN,
+        reason="state a base voltage that its bus does not hold",
+        counted_noun="transformers",
+        note=(
+            lambda row: _BASE_VOLTAGE_NOTE.format(
+                primary=row[SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY],
+                secondary=row[SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY],
+                bus0=row[_BUS0_V_NOM],
+                bus1=row[_BUS1_V_NOM],
+            )
+        ),
+    ),
+)
 _RATING_RULE = SkipRule(
     keep=pl.col(SiennaTransformerCircuitCol.RATING) != 0.0,
     report=SkipReport(
@@ -216,6 +268,7 @@ _TRANSFORMER_SKIP_RULES: tuple[SkipRule, ...] = (
     _PARAMETER_UNITS_RULE,
     _BASE_POWER_RULE,
     _RATING_RULE,
+    _BASE_VOLTAGE_RULE,
 )
 
 
@@ -415,8 +468,9 @@ def _convert_transformer_impedance(
 ) -> _TransformerImpedance:
     """Rebase the impedance from the circuit's base_power onto the s_nom PyPSA states it on.
 
-    Both bases share the voltage of the primary winding, so the voltage cancels and the ratio
-    of the two power bases is the whole conversion.
+    A skip rule leaves out a circuit whose base voltages its buses do not hold, so both bases
+    share the same voltage, the voltage cancels, and the ratio of the two power bases is the
+    whole conversion.
     """
     s_nom = rating * values.base_power
     # A skip rule drops a base power of zero, so the division always holds.
@@ -436,20 +490,51 @@ def _derive_phase_shift(reporter: TransformerReporter, name: str, alpha: float) 
     return degrees
 
 
-def _report_base_voltages(
-    reporter: TransformerReporter, name: str, row: dict[str, Any], buses: _BusLookup
-) -> None:
-    """Record both base voltages, and each one that disagrees with the bus it belongs to."""
+def _report_base_voltages(reporter: TransformerReporter, name: str, row: dict[str, Any]) -> None:
+    """Record both base voltages, which the network holds on the buses of the two windings."""
     windings = (
-        (SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY, row[_BUS0]),
-        (SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY, row[_BUS1]),
+        SiennaTransformerCircuitCol.BASE_VOLTAGE_PRIMARY,
+        SiennaTransformerCircuitCol.BASE_VOLTAGE_SECONDARY,
     )
-    for attribute, bus_id in windings:
-        stated = row[attribute]
-        reporter.record_base_voltage(name, attribute, stated)
-        bus_v_nom = buses.v_nom.get(bus_id)
-        if stated is not None and bus_v_nom is not None and bus_v_nom != float(stated):
-            reporter.record_base_voltage_mismatch(name, attribute, float(stated), bus_v_nom)
+    for attribute in windings:
+        reporter.record_base_voltage(name, attribute, row[attribute])
+
+
+def _enrich_bus_voltages(table: pl.DataFrame, buses: _BusLookup) -> pl.DataFrame:
+    """Add the v_nom of the bus of each winding, which the base voltage rule compares against."""
+    return table.with_columns(
+        _build_voltage_column(table, _BUS0, buses).alias(_BUS0_V_NOM),
+        _build_voltage_column(table, _BUS1, buses).alias(_BUS1_V_NOM),
+    )
+
+
+def _build_voltage_column(table: pl.DataFrame, bus_column: str, buses: _BusLookup) -> pl.Series:
+    """The v_nom of each row's bus, as a column, with nothing where the lookup holds no bus."""
+    return pl.Series([buses.v_nom.get(bus_id) for bus_id in table[bus_column]], dtype=pl.Float64)
+
+
+def _warn_dropped_shunts(names: list[str]) -> None:
+    """One warning for the transformers whose magnetizing shunt the network does not hold."""
+    if not names:
+        return
+    log.warning(_SHUNT_WARNING, len(names), name_a_few(names))
+
+
+def _list_shunt_names(table: pl.DataFrame) -> list[str]:
+    """Each transformer that states a magnetizing shunt the PyPSA network then loses."""
+    return sorted(
+        row[SIENNA_NAME_COLUMN]
+        for row in table.iter_rows(named=True)
+        if _is_shunt_stated(row[SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT])
+    )
+
+
+def _is_shunt_stated(shunt: dict[str, Any] | None) -> bool:
+    """Whether a shunt states a part that is not zero, which is a value the network loses."""
+    if shunt is None:
+        return False
+    parts = (shunt.get(SiennaStructField.REAL), shunt.get(SiennaStructField.IMAG))
+    return any(part is not None and float(part) != 0.0 for part in parts)
 
 
 def _build_transformer_row(
@@ -472,7 +557,7 @@ def _build_transformer_row(
     reporter.record_tap(name, values.tap)
     impedance = _convert_transformer_impedance(reporter, name, rating, values)
     phase_shift = _derive_phase_shift(reporter, name, values.alpha)
-    _report_base_voltages(reporter, name, row, buses)
+    _report_base_voltages(reporter, name, row)
     reporter.record_magnetizing_shunt(name, row[SiennaTwoWindingTransformerCol.MAGNETIZING_SHUNT])
     record_carried_fields(reporter, _CIRCUIT_TYPE, ext, TRANSFORMER_CARRIED)
     s_nom_min = extendable_floor(impedance.s_nom, ext.s_nom_extendable)
@@ -517,7 +602,9 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             return
         extensions = self._extensions.read(TransformerExtension)
         reporter = TransformerReporter(self._recorder)
-        supported = drop_skipped(source.collect(), _TRANSFORMER_SKIP_RULES, self._recorder)
+        staged = _enrich_bus_voltages(source.collect(), buses)
+        supported = drop_skipped(staged, _TRANSFORMER_SKIP_RULES, self._recorder)
+        _warn_dropped_shunts(_list_shunt_names(supported))
         rows = [
             _build_transformer_row(
                 reporter,

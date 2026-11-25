@@ -497,6 +497,11 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"arc for TwoWindingTransformer {name!r}")
         self._find_transformer_circuit(name)["arc"] = arc_id
 
+    def set_transformer_base_voltage(self, name: str, field: str, base_voltage: float) -> None:
+        """One base voltage of the circuit, which a test can set apart from the bus voltage."""
+        self._check_not_saved(f"{field} for TwoWindingTransformer {name!r}")
+        self._find_transformer_circuit(name)[field] = base_voltage
+
     def set_transformer_magnetizing_shunt(self, name: str, real: float, imag: float) -> None:
         self._check_not_saved(f"magnetizing_shunt for TwoWindingTransformer {name!r}")
         self._find_transformer(name)["magnetizing_shunt"] = {"real": real, "imag": imag}
@@ -860,6 +865,8 @@ class SiennaSystemBuilder:
             sections["lines"] = self._lines
         if self._transformers:
             sections["transformers"] = self._transformers
+        # A circuit that no transformer names is a document of its own, so it needs its own gate.
+        if self._transformer_circuits:
             sections["transformer_circuits"] = self._transformer_circuits
         if self._links:
             sections["links"] = self._links
