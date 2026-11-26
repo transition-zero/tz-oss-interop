@@ -97,7 +97,7 @@ nodes, in this order:
 | Node | What it does |
 | --- | --- |
 | `stage_sienna_system_json` | Stages the system, its time-series sidecar and its optional `extensions.json`. |
-| `sienna_to_osemosys_map_components` | Builds the frame, the buses, the calendar and the demands. |
+| `sienna_to_osemosys_map_components` | Builds the frame, the buses, the calendar, the demands and the generators. |
 | `sienna_to_osemosys_relate_components` | Derives each set that only a parameter key names, and the default of each parameter. |
 | `osemosys_canonical_build_destination_stage` | Turns each `default_from` into a number. |
 | `emit_osemosys_csv` | Writes the configuration, the CSV files and the mappings file. |
@@ -108,6 +108,11 @@ A set whose members a Sienna component states directly is written by the step th
 component. A set whose members exist only as the key of a parameter is derived from the
 parameter tables, so no such set holds a member that no parameter table names.
 
+A parameter table can also name a member of a set that a component step wrote. A fuel that a
+plant burns and that no bus balances is a member of `FUEL` that no bus states. So a set that a
+component step wrote keeps its own members and gains each member that a parameter table names,
+and `decisions.md` records the count that it gained.
+
 | Set | Written by | From |
 | --- | --- | --- |
 | `REGION` (`region`) | the bus group | The part of the name of each bus before the fuel |
@@ -117,6 +122,8 @@ parameter tables, so no such set holds a member that no parameter table names.
 | `SEASON` (`season`) | `sienna_to_osemosys_relate_components` | The `season` column of each parameter table |
 | `DAYTYPE` (`day_type`) | `sienna_to_osemosys_relate_components` | The `day_type` column of each parameter table |
 | `DAILYTIMEBRACKET` (`daily_time_bracket`) | `sienna_to_osemosys_relate_components` | The `daily_time_bracket` column of each parameter table |
+| `TECHNOLOGY` (`technology`) | `sienna_to_osemosys_relate_components` | The `technology` column of each parameter table |
+| `MODE_OF_OPERATION` (`operating_mode`) | `sienna_to_osemosys_relate_components` | The `operating_mode` column of each parameter table |
 
 #### A bus → one region and one fuel
 
@@ -258,7 +265,109 @@ one warning names three of them.
 
 ### The generators and their operating modes
 
-Not written yet.
+`sienna_to_osemosys_map_generators` runs in `sienna_to_osemosys_map_components`, after the bus
+group and the calendar group, because a technology is keyed by a region and its hourly share by
+a timeslice.
+
+Each Sienna generator becomes one OSeMOSYS technology in the region of its bus. The
+`ThermalStandard`, the `RenewableDispatch`, the `RenewableNonDispatch`, the `HydroDispatch` and
+the `HydroTurbine` of the system all become technologies, because each one puts out
+electricity.
+
+#### The electricity output ratio is written as 1
+
+The forward leg rated a generator on the electricity that it puts out. It took the
+`ResidualCapacity` of the technology, multiplied it by `CapacityToActivityUnit` / 8760 h and by
+the electricity `OutputActivityRatio` of the mode that the generator runs, and it divided every
+cost, every emission rate, every fuel ratio and every activity limit of the technology by that
+same ratio. No Sienna field states the ratio, so this leg cannot recover it.
+
+So the leg writes the electricity `OutputActivityRatio` of the held mode as 1, and every other
+value as the quotient that the forward leg left. One megawatt hour of the activity of the
+written technology is then one megawatt hour of electricity, and the written model is the input
+model with every value of that technology divided by one number. `decisions.md` carries a
+`NOT_MAPPED` event for each value that the ratio scaled, and one warning names three
+technologies.
+
+`CapacityToActivityUnit` is 8760 for the same reason: the units of the written model are MW and
+MWh, so one MW of capacity runs the 8760 MWh of a whole year. The frame group writes that
+parameter with no rows and the configuration states 8760 as its default, so `ResidualCapacity`
+is the base power of the generator in megawatts. The `capacity_to_activity_unit` of a
+`generator` record therefore reaches no table.
+
+#### A generator → a technology, a mode and a fleet
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `ResidualCapacity` (`residual_capacity`) | The base power of the generator, in MW, for each year of the model | `base_power` |
+| `OutputActivityRatio` (`output_activity_ratio`) | 1, for the electricity fuel of its bus at the held mode | The rule above |
+| `InputActivityRatio` (`input_activity_ratio`) | The ratio of each `fuel_buses` entry, at the held mode | `generator.fuel_buses` |
+| `OutputActivityRatio` | The ratio of each `output_buses` entry, at the held mode | `generator.output_buses` |
+| `InputActivityRatio`, `OutputActivityRatio` | The `input_ratios` and the `output_ratios` of each other mode, for that mode | `generator.operating_modes` |
+| `CapacityFactor` (`capacity_factor`) | The share of its fleet that the generator can use in the hour of the timeslice | The series of the generator, or the capacity below |
+
+A `fuel_buses` entry and an `output_buses` entry are each keyed by the bus of the fuel,
+`<region>/<fuel>`, and the leg reads the fuel of that bus under the same rule as the bus group.
+The row takes the region of the technology, because OSeMOSYS keys an activity ratio by the
+region of the technology that states it. An `operating_modes` entry names the fuel itself.
+
+#### The held mode and the other modes
+
+A Sienna generator runs one operating mode and holds the cost, the flows and the emissions of
+that mode itself, so the forward leg kept those out of the sidecar. Each other mode of the
+technology travels as an `operating_modes` entry in full, and the bounds of every mode travel
+there, the held mode included.
+
+So the leg reads the held mode back this way:
+
+1. An entry that states neither `input_ratios` nor `output_ratios` is the held mode, because
+   the forward leg removed the flows of the held mode and of no other mode.
+2. Where no entry is like that, the held mode takes the first mode name, counting from 1, that
+   no entry claims.
+
+The mode names of a model whose operations mode was not `1` therefore change. OSeMOSYS reads a
+mode name as a label, so a renamed mode gives the same model.
+
+#### The share of each hour
+
+OSeMOSYS states the share of its capacity that a technology can use in one timeslice as
+`CapacityFactor`, and the share of the energy of a year that it can make as
+`AvailabilityFactor`. The forward leg multiplied the two into one hourly derate, so this leg
+cannot tell them apart. It writes the whole derate as `CapacityFactor` and leaves
+`AvailabilityFactor` at its default of 1, because a Sienna availability limits the power of
+each hour and not the energy of the year.
+
+A staged series of a generator is a share of one capacity of its own, and which capacity that
+is differs by Sienna type:
+
+| Sienna type | The capacity that one value of its series is a share of |
+| --- | --- |
+| `ThermalStandard` | `active_power_limits.max` |
+| `RenewableDispatch`, `RenewableNonDispatch` | `rating` |
+| `HydroDispatch`, `HydroTurbine` | `base_power` |
+
+So the share of its fleet that the generator can use in one hour is the value of that hour times
+that capacity, over its base power. A generator that states no series can use the same share in
+every hour, which is that capacity over its base power.
+
+A share of 1 is the default of `CapacityFactor`, so a generator that can use its whole fleet in
+a timeslice gets no row for that timeslice.
+
+#### What stops a generator from reaching a technology
+
+A model's data never stops a translation, so each generator below is left out and every other
+generator still gives its technology. `decisions.md` carries a `COMPONENT_SKIPPED` event for
+each one, and one warning names three of them under the Sienna type that states them.
+
+| The generator | Why it is left out |
+| --- | --- |
+| A generator whose `power_units` is not `NATURAL_UNITS` | Its megawatts are a share of a base power, so reading them as megawatts would write a number nobody meant |
+| A generator of no base power | OSeMOSYS states the share of a fleet that a technology can use, and a generator of no fleet has no share to state |
+
+#### Not written yet
+
+The costs, the emission rates and the activity limits of a generator, and the technology of a
+`generator` record of a fuel that is not electricity.
 
 ### The storages
 
@@ -288,6 +397,12 @@ ones that a later component group reads.
 | The `conformity` of a load | OSeMOSYS has no load conformity concept. |
 | The `operation_cost` of an `InterruptiblePowerLoad` | OSeMOSYS states no unserved energy variable, so it prices no demand that the model does not meet. |
 | The `carrier`, the `type` and the `sign` of a `load` record | A fuel takes its name from the bus of the load, and OSeMOSYS states no sign of a demand. |
+| The `prime_mover_type` and the `fuel` of a generator, and the `carrier` and the `category` of its record | OSeMOSYS states the kind of a technology as an annotation of the canonical stage, and the written otoole model holds no annotation table. |
+| The `rating`, the `active_power`, the `reactive_power` and the `power_factor` of a generator | OSeMOSYS holds no electrical data. The rating of a renewable generator is read as the capacity that its series is a share of, and nothing else. |
+| The `active_power_limits.min` of a generator | OSeMOSYS states no minimum stable level, which is why the forward leg writes that limit as 0. |
+| The `status`, the `time_at_status`, the `ramp_limits` and the `time_limits` of a generator | OSeMOSYS states no unit commitment data. |
+| The `available` of a generator | OSeMOSYS states no availability of a technology, so the leg writes the technology of every generator. |
+| The `committable`, the `efficiency` and the `p_nom_extendable` of a `generator` record | Each one is a PyPSA field of the round trip. OSeMOSYS states the efficiency of a technology as its activity ratios, and this leg writes a dispatch model with no build. |
 
 ## Open questions
 
@@ -318,6 +433,23 @@ lost there. A system whose periods cover part of its series loses the rest of it
 records no event for that hour, because it records one event for each demand and not one for
 each hour. A later rung could report the hours that no period covers, as one event for each
 load.
+
+**The electricity output ratio of a technology.** The forward leg divided every value of a
+generator by that ratio, and no Sienna field states it, so the leg writes the ratio as 1 and
+every other value as the quotient. A second forward run over the written model therefore gives
+the same Sienna system, and the numbers of the written model are the publisher's own only where
+the ratio was 1. A later rung could relay the ratio through a field of the `generator` record,
+which is about 20 lines in each leg and makes the whole technology exact.
+
+**The split of `CapacityFactor` and `AvailabilityFactor`.** The forward leg multiplied the two
+into one hourly derate. This leg writes the whole derate as `CapacityFactor`, so a model that
+stated both no longer limits the energy of its year with a factor of its own. The hourly limit
+of the written model is the hourly limit of the input model, so the dispatch is the same.
+
+**A `HydroTurbine` reaches no reservoir.** A turbine becomes a technology with its own fleet
+and its own hourly share, and the energy of the reservoir behind it reaches OSeMOSYS as a
+storage. So a written model holds the turbine with no energy budget until the storage group
+writes one.
 
 **A load record whose companion parquet states hours that no Sienna series states.** An
 invented calendar has one timeslice for each distinct snapshot of the first staged Sienna

@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import polars as pl
+
 from interop.core.extensions import ExtensionReader, LoadExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.sienna_osemosys_translations import (
-    Calendar,
-    build_calendar_hours,
     build_demand_sources,
     set_demand_tables,
 )
@@ -24,10 +24,9 @@ def map_demands(
     state: State,
     recorder: ScopedRecorder,
     extensions: ExtensionReader,
-    calendar: Calendar,
+    hours: pl.DataFrame,
     years: Sequence[int],
 ) -> None:
     """Write the demand of each fuel, from the loads of the system and the hours of its series."""
     sources = build_demand_sources(state, extensions.read(LoadExtension), recorder)
-    hours = build_calendar_hours(state, calendar)
     set_demand_tables(state, sources, hours, years, recorder)

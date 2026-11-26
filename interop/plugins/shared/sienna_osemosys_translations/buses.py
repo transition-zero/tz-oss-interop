@@ -65,9 +65,9 @@ def list_bus_members(
 ) -> list[BusMembers]:
     """One entry for each Sienna bus and for each bus that only a `bus` record holds."""
     buses = _list_bus_names(state)
-    members = [_build_members(name, None) for name in buses]
+    members = [build_bus_members(name, None) for name in buses]
     members += [
-        _build_members(record.name, records.get_fields(record.name, BUS_MAPPED_FIELDS).location)
+        build_bus_members(record.name, records.get_fields(record.name, BUS_MAPPED_FIELDS).location)
         for record in records.list_records()
         if record.name not in buses
     ]
@@ -92,7 +92,8 @@ def _list_bus_names(state: State) -> list[str]:
     return names[SiennaACBusCol.NAME].to_list()
 
 
-def _build_members(name: str, location: str | None) -> BusMembers:
+def build_bus_members(name: str, location: str | None = None) -> BusMembers:
+    """The region and the fuel that one bus name states, under the rule that named it."""
     if location and name.startswith(f"{location}{NAME_SEPARATOR}"):
         fuel = name[len(location) + len(NAME_SEPARATOR) :]
         return BusMembers(name, location, fuel, _LOCATED_DERIVATION)
