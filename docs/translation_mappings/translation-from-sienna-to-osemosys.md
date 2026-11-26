@@ -353,6 +353,53 @@ every hour, which is that capacity over its base power.
 A share of 1 is the default of `CapacityFactor`, so a generator that can use its whole fleet in
 a timeslice gets no row for that timeslice.
 
+#### What a technology costs, what it emits and what bounds its activity
+
+A Sienna generator states what one megawatt hour of its electricity costs, and its record
+states what one megawatt of its capacity costs to build and to keep. Every one of these values
+already divides by the electricity output ratio, so the leg writes each one as it stands.
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `VariableCost` (`variable_operation_cost`) | The cost of one MWh at the held mode, in $/MWh, in each year of the model | `own_marginal_cost` of the record, else the proportional term of `operation_cost.variable_operation_cost` |
+| `VariableCost` | The cost of one MWh at each other mode, in each year | `generator.operating_modes[].variable_cost` |
+| `FixedCost` (`fixed_cost`) | The yearly charge on one MW of capacity, in each year | `generator.fom_charge_per_mw_year` |
+| `CapitalCost` (`capital_cost`) | What one MW of new capacity costs, in each year | `generator.overnight_cost_per_mw` |
+| `OperationalLife` (`lifetime`) | How many years the plant runs | `generator.lifetime_years` |
+| `EmissionActivityRatio` (`emission_rate`) | The tonnes of each pollutant for one MWh at the held mode, in each year | `own_emission_rates_t_per_mwh` of the record, else `emission_rates_t_per_mwh` |
+| `EmissionActivityRatio` | The same, at each other mode | `generator.operating_modes[].emission_rates` |
+| `TotalTechnologyAnnualActivityLowerLimit`, `UpperLimit` | The MWh that the technology must and may make, in each year that the record names | `generator.e_sum_min`, `generator.e_sum_max` |
+| `TotalTechnologyModelPeriodActivityLowerLimit`, `UpperLimit` | The same over the whole model period | `generator.e_sum_min_horizon`, `generator.e_sum_max_horizon` |
+| `TechnologyActivityByModeUpperLimit`, `LowerLimit` | The MWh that one mode must and may make, in each year that the entry names | `generator.operating_modes[].activity_max`, `activity_min` |
+| `TechnologyActivityDecreaseByModeLimit` | The most that the activity of one mode can fall from the year before | `generator.operating_modes[].activity_decrease_max` |
+
+**A plant that draws its fuel from a bus prices neither the fuel nor its emissions.** A Sienna
+cost curve holds the price of the fuel and a Sienna emission rate holds what the producer of
+that fuel emits, because Sienna prices no fuel of its own. A written model prices the fuel at
+the technology that supplies it, so the cost and the rates of such a plant are the `own_` fields
+of its record, which hold neither. A generator that burns no fuel from a bus has no `own_` field,
+and its cost curve and its rates are its own.
+
+**A value that holds in every year.** A Sienna generator states one cost and no cost for one
+year, so a value with no year of its own gives one row for each year of the model.
+`decisions.md` carries one event for each value and not one for each year.
+
+**A value that equals the default of its parameter gets no row.** OSeMOSYS reads the default
+where a model states no row, so a generator that costs 0 to run writes no `VariableCost` row and
+an emission rate of 0 writes no `EmissionActivityRatio` row. A limit of 0 is still written,
+because `TotalTechnologyAnnualActivityUpperLimit` defaults to -1 and a limit of 0 states that the
+technology may not run.
+
+**Three of these parameters are not core OSeMOSYS v1.0.1.**
+`TechnologyActivityByModeUpperLimit`, `TechnologyActivityByModeLowerLimit` and
+`TechnologyActivityDecreaseByModeLimit` come from the OSeMOSYS MUIO model v5.7. The leg builds
+their tables, and the default run leaves their files out and names each one in a warning, as
+"The parameter set" above states. Set the sink parameter `wants_every_parameter` to write them.
+
+**`AvailabilityFactor` takes its default.** No Sienna generator states a limit on the energy of
+a year of its own, because the forward leg folded that limit into the hourly derate. "The share
+of each hour" above states the whole rule.
+
 #### What stops a generator from reaching a technology
 
 A model's data never stops a translation, so each generator below is left out and every other
@@ -366,8 +413,7 @@ each one, and one warning names three of them under the Sienna type that states 
 
 #### Not written yet
 
-The costs, the emission rates and the activity limits of a generator, and the technology of a
-`generator` record of a fuel that is not electricity.
+The technology of a `generator` record of a fuel that is not electricity.
 
 ### The storages
 
@@ -403,6 +449,9 @@ ones that a later component group reads.
 | The `status`, the `time_at_status`, the `ramp_limits` and the `time_limits` of a generator | OSeMOSYS states no unit commitment data. |
 | The `available` of a generator | OSeMOSYS states no availability of a technology, so the leg writes the technology of every generator. |
 | The `committable`, the `efficiency` and the `p_nom_extendable` of a `generator` record | Each one is a PyPSA field of the round trip. OSeMOSYS states the efficiency of a technology as its activity ratios, and this leg writes a dispatch model with no build. |
+| The `fixed`, the `start_up`, the `shut_down` and the `vom_cost` of a generator's `operation_cost` | OSeMOSYS charges a fixed cost on capacity and not on a plant, which `FixedCost` holds, and it states no unit commitment cost. |
+| The `unit_size_mw`, the `p_nom_min`, the `p_nom_max`, the `discount_rate`, the `technical_life_years`, the `build_year`, the `retirement_year`, the `max_growth`, the `min_growth`, the `max_growth_rate`, the `min_growth_rate`, the `max_growth_floor`, the `capacity_factor_min`, the `production_share_min` and the `production_share_max` of a `generator` record | Each one bounds or prices new capacity, and this epic writes a dispatch model over the years that the sidecar names. OSeMOSYS holds each of them, so a later epic that writes a capacity expansion model can add them: about 100 lines in this leg. |
+| The `marginal_cost_series` of a `generator` record | OSeMOSYS prices a technology by the year and not by the hour. |
 
 ## Open questions
 

@@ -13,6 +13,7 @@ from pytest_bdd import parsers, when
 _PIPELINE = "sienna-to-osemosys-csv"
 _SYSTEM_PATH = Path("inputs/system.json")
 _MAPPINGS_OUTPUT_PATH = "outputs/osemosys_mappings.yaml"
+_EVERY_PARAMETER_OVERRIDE = "sink[0].wants_every_parameter=true"
 
 
 @when(
@@ -22,6 +23,21 @@ _MAPPINGS_OUTPUT_PATH = "outputs/osemosys_mappings.yaml"
 def write_the_sienna_system_out(sienna_system_builder: SiennaSystemBuilder, output_dir: str) -> int:
     sienna_system_builder.save(_SYSTEM_PATH)
     return run_pipeline(_PIPELINE, overrides=_build_overrides(output_dir))
+
+
+@when(
+    parsers.parse(
+        'I write the Sienna system out as an otoole model in "{output_dir}" with every parameter'
+    ),
+    target_fixture="pipeline_exit_code",
+)
+def write_the_sienna_system_out_with_every_parameter(
+    sienna_system_builder: SiennaSystemBuilder, output_dir: str
+) -> int:
+    """A run that declares the 28 parameters that core OSeMOSYS v1.0.1 does not state."""
+    sienna_system_builder.save(_SYSTEM_PATH)
+    overrides = [*_build_overrides(output_dir), _EVERY_PARAMETER_OVERRIDE]
+    return run_pipeline(_PIPELINE, overrides=overrides)
 
 
 def _build_overrides(output_dir: str) -> list[str]:

@@ -14,6 +14,7 @@ that hour is those megawatts over its base power.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import polars as pl
 
@@ -59,6 +60,12 @@ BUS_REGION = "bus_region"
 BUS_FUEL = "bus_fuel"
 # The Sienna type that an event names as the source of the technology.
 SOURCE_COMPONENT = "source_component"
+# $/MWh. The proportional term of the cost curve of the generator, where it states one.
+VARIABLE_COST_MWH = "variable_cost_mwh"
+# The field of the generator that VARIABLE_COST_MWH comes from, which an event names.
+CURVE_COST_ATTRIBUTE = (
+    f"{SiennaGeneratorCol.OPERATION_COST}.{SiennaStructField.VARIABLE_OPERATION_COST}"
+)
 
 # The staged series that holds the hourly shape of a generator, by the type that owns each.
 GENERATOR_SERIES_KEYS = (
@@ -83,6 +90,7 @@ GENERATORS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     BASE_POWER_MW: pl.Float64,
     CAPACITY_MW: pl.Float64,
     CAPACITY_ATTRIBUTE: pl.Utf8,
+    VARIABLE_COST_MWH: pl.Float64,
     SOURCE_COMPONENT: pl.Utf8,
 }
 _SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -118,7 +126,9 @@ def build_generator_sources(
         )
     rows = _drop_unusable(staged.collect(), recorder)
     keyed = rows.join(_build_bus_keys(state, members), on=SiennaGeneratorCol.BUS, how="inner")
-    table = keyed.select(_list_values(keyed)).with_columns(_build_held_modes(keyed, records))
+    table = keyed.select(_list_values(keyed)).with_columns(
+        _build_held_modes(keyed, records), _build_curve_costs(keyed)
+    )
     return GeneratorSources(
         table.select(list(GENERATORS_SCHEMA)), _build_series(state, table), records
     )
@@ -213,6 +223,22 @@ def _build_held_modes(
         for name in names
     ]
     return pl.Series(HELD_MODE, held, dtype=pl.Utf8)
+
+
+def _build_curve_costs(table: pl.DataFrame) -> pl.Series:
+    """What one MWh of each generator costs, in the row order of `table`."""
+    costs = [_find_curve_cost(row) for row in table.iter_rows(named=True)]
+    return pl.Series(VARIABLE_COST_MWH, costs, dtype=pl.Float64)
+
+
+def _find_curve_cost(row: dict[str, Any]) -> float | None:
+    """The proportional term of the cost curve, which a `RenewableNonDispatch` has none of."""
+    cost = row.get(SiennaGeneratorCol.OPERATION_COST) or {}
+    variable = cost.get(SiennaStructField.VARIABLE_OPERATION_COST) or {}
+    curve = variable.get(SiennaStructField.VALUE_CURVE) or {}
+    data = curve.get(SiennaStructField.FUNCTION_DATA) or {}
+    term = data.get(SiennaStructField.PROPORTIONAL_TERM)
+    return None if term is None else float(term)
 
 
 # --- the share of each hour -----------------------------------------------------

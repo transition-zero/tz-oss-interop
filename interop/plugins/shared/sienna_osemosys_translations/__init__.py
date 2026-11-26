@@ -30,6 +30,9 @@ from interop.plugins.shared.sienna_osemosys_translations.frame import (
 from interop.plugins.shared.sienna_osemosys_translations.generator_tables import (
     set_generator_tables,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_value_tables import (
+    set_generator_value_tables,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generators import (
     GeneratorSources,
     build_generator_sources,
@@ -59,6 +62,7 @@ __all__ = [
     "set_demand_tables",
     "set_derived_set_tables",
     "set_generator_tables",
+    "set_generator_value_tables",
     "set_frame_parameters",
     "set_parameter_table",
     "set_set_table",
