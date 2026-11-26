@@ -1,0 +1,14 @@
+source_framework: sienna
+destination_framework: osemosys-csv
+source:
+  name: stage_sienna_system_json
+steps:
+  - name: sienna_to_osemosys_map_components
+  - name: sienna_to_osemosys_relate_components
+  - name: osemosys_canonical_build_destination_stage
+sinks:
+  - name: emit_osemosys_csv
+    params:
+      output_config_path: outputs/model/config.yaml
+      output_csv_dir: outputs/model/csv
+      output_mappings_path: outputs/osemosys_mappings.yaml

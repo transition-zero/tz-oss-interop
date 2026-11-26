@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 
 import polars as pl
@@ -27,6 +28,8 @@ _PARAM_TYPE = "param"
 _SET_TYPE = "set"
 _FLOAT_DTYPE = "float"
 _STRING_DTYPE = "str"
+# A sum over many rows of a share of a year carries the rounding of each row.
+_SUM_TOLERANCE = 1e-9
 
 
 @given("an otoole model", target_fixture="otoole_model_builder")
@@ -265,6 +268,40 @@ def assert_otoole_csv_rows(path: str, datatable: list[list[str]]) -> None:
     assert sorted(actual) == sorted(expected_rows), (
         f"expected rows {expected_rows} in {path}, got {actual}"
     )
+
+
+@then(parsers.parse('the otoole CSV file "{path}" has {count:d} rows'))
+def assert_otoole_csv_row_count(path: str, count: int) -> None:
+    _header, *rows = _read_csv_rows(Path(path))
+    assert len(rows) == count, f"expected {count} rows in {path}, got {len(rows)}"
+
+
+@then(
+    parsers.parse(
+        'the otoole CSV file "{path}" sums the VALUE column to {expected:g} for each "{column}"'
+    )
+)
+def assert_otoole_csv_sum_by_column(path: str, expected: float, column: str) -> None:
+    """One total for each value of `column`, so a parameter keyed by the year is checked per
+    year."""
+    totals = _build_sums_by_column(Path(path), column)
+    assert totals, f"expected {path} to hold rows keyed by {column}"
+    for key, total in sorted(totals.items()):
+        assert math.isclose(total, expected, rel_tol=_SUM_TOLERANCE), (
+            f"expected the VALUE column of {path} to sum to {expected} at {column} {key}, "
+            f"got {total}"
+        )
+
+
+def _build_sums_by_column(path: Path, column: str) -> dict[str, float]:
+    header, *rows = _read_csv_rows(path)
+    assert column in header, f"expected the column {column} in {path}, got {header}"
+    key_index = header.index(column)
+    value_index = header.index(VALUE_COLUMN)
+    totals: dict[str, float] = {}
+    for row in rows:
+        totals[row[key_index]] = totals.get(row[key_index], 0.0) + float(row[value_index])
+    return totals
 
 
 @then(
