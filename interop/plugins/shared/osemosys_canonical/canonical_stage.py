@@ -134,6 +134,7 @@ def list_canonical_tables(state: State) -> list[CanonicalTable]:
     topology = [
         CanonicalTable(*_parse_table_key(key), table)
         for key, table in state.source_topology.items()
+        if _is_canonical_table_key(key)
     ]
     time_series = [
         CanonicalTable(TableKind(kind), name, table)
@@ -177,6 +178,7 @@ def list_destination_canonical_tables(state: State) -> list[CanonicalTable]:
 
 
 def _is_canonical_table_key(key: str) -> bool:
-    """A step of the same hop can hold a destination table that is not a canonical one."""
+    """A source of another framework, and a step of the same hop, each hold a table whose key is
+    not a canonical one."""
     kind, separator, name = key.partition(TABLE_KEY_SEPARATOR)
     return bool(separator and name) and kind in _TABLE_KINDS
