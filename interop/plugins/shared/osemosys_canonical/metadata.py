@@ -20,13 +20,13 @@ from interop.plugins.shared.osemosys_canonical.mappings import Units
 from interop.plugins.shared.osemosys_canonical.parameter_mapping import MappedParameters
 from interop.plugins.shared.osemosys_canonical.schema import CanonicalParameter, CanonicalSchema
 
-_DEFAULTS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+DEFAULTS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     MetadataColumn.KIND: pl.Utf8,
     MetadataColumn.PARAMETER: pl.Utf8,
     MetadataColumn.DEFAULT: pl.Float64,
     MetadataColumn.DEFAULT_FROM: pl.Utf8,
 }
-_UNITS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+UNITS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     MetadataColumn.QUANTITY: pl.Utf8,
     MetadataColumn.UNIT: pl.Utf8,
 }
@@ -108,7 +108,7 @@ def _build_defaults_table(
         *_build_default_rows(TableKind.PARAMETER, defaults),
         *_build_default_rows(TableKind.EXTENSION, extensions),
     ]
-    return pl.DataFrame(rows, schema=_DEFAULTS_SCHEMA)
+    return pl.DataFrame(rows, schema=DEFAULTS_SCHEMA)
 
 
 def _build_default_rows(
@@ -130,7 +130,7 @@ def _build_units_table(units: Units) -> pl.DataFrame:
         {MetadataColumn.QUANTITY: quantity, MetadataColumn.UNIT: str(unit)}
         for quantity, unit in units.model_dump(exclude_none=True).items()
     ]
-    return pl.DataFrame(rows, schema=_UNITS_SCHEMA)
+    return pl.DataFrame(rows, schema=UNITS_SCHEMA)
 
 
 def _build_schema_table(schema: CanonicalSchema) -> pl.DataFrame:
