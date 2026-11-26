@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from string import Formatter
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from interop.core.user_mappings import UserMappings
@@ -224,3 +225,16 @@ class OsemosysCanonicalMappings(UserMappings):
     unknown key."""
 
     osemosys: OsemosysMappings = Field(default_factory=OsemosysMappings)
+
+
+# The top-level key that the OSeMOSYS part of a mappings file takes, and the units inside it.
+OSEMOSYS_KEY = "osemosys"
+UNITS_KEY = "units"
+
+
+def build_mappings_document(units: Units) -> bytes:
+    """The mappings file beside a written model, so a run over it reads the stated units."""
+    stated = units.model_dump(exclude_none=True)
+    document = {OSEMOSYS_KEY: {UNITS_KEY: stated}}
+    text: str = yaml.safe_dump(document, sort_keys=False)
+    return text.encode("utf-8")

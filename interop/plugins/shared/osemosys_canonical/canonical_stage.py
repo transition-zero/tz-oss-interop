@@ -151,3 +151,32 @@ def _is_table_kind(kind: str) -> bool:
 def _parse_table_key(key: str) -> tuple[TableKind, str]:
     kind, name = key.split(TABLE_KEY_SEPARATOR, maxsplit=1)
     return TableKind(kind), name
+
+
+def set_destination_canonical_table(state: State, canonical: CanonicalTable) -> None:
+    """The destination side takes one string key, so a parameter is keyed `parameter/<name>`."""
+    key = build_table_key(canonical.kind, canonical.name)
+    if canonical.kind in _TIME_SERIES_KINDS:
+        state.destination_time_series[key] = canonical.table
+    else:
+        state.destination_tables[key] = canonical.table.collect()
+
+
+def list_destination_canonical_tables(state: State) -> list[CanonicalTable]:
+    tables = [
+        CanonicalTable(*_parse_table_key(key), table.lazy())
+        for key, table in state.destination_tables.items()
+        if _is_canonical_table_key(key)
+    ]
+    series = [
+        CanonicalTable(*_parse_table_key(key), table)
+        for key, table in state.destination_time_series.items()
+        if _is_canonical_table_key(key)
+    ]
+    return [*tables, *series]
+
+
+def _is_canonical_table_key(key: str) -> bool:
+    """A step of the same hop can hold a destination table that is not a canonical one."""
+    kind, separator, name = key.partition(TABLE_KEY_SEPARATOR)
+    return bool(separator and name) and kind in _TABLE_KINDS

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
 import polars as pl
+import yaml
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.otoole_models import VALUE_COLUMN, OtooleModelBuilder
@@ -16,6 +18,15 @@ _PARAMETER_KIND = "parameter"
 _EXTENSION_KIND = "extension"
 _DEFAULT_COLUMN = "default"
 _EMPTY_STRING_CELL = '""'
+_PARQUET_GLOB = "**/*.parquet"
+_CONFIG_TYPE_KEY = "type"
+_CONFIG_INDICES_KEY = "indices"
+_CONFIG_DTYPE_KEY = "dtype"
+_CONFIG_DEFAULT_KEY = "default"
+_PARAM_TYPE = "param"
+_SET_TYPE = "set"
+_FLOAT_DTYPE = "float"
+_STRING_DTYPE = "str"
 
 
 @given("an otoole model", target_fixture="otoole_model_builder")
@@ -65,6 +76,18 @@ def given_otoole_parameter_without_file(
     otoole_model_builder: OtooleModelBuilder, name: str, key: str, default: float
 ) -> None:
     otoole_model_builder.set_parameter(name, key.split(), default, [], has_file=False)
+
+
+@given(
+    parsers.parse('the otoole parameter "{name}" keyed by "{key}" with no default has the rows:')
+)
+def given_otoole_parameter_rows_without_default(
+    otoole_model_builder: OtooleModelBuilder, name: str, key: str, datatable: list[list[str]]
+) -> None:
+    header, *rows = datatable
+    columns = [*key.split(), VALUE_COLUMN]
+    assert header == columns, f"the table of {name} must have the header {columns}, not {header}"
+    otoole_model_builder.set_parameter(name, key.split(), None, rows)
 
 
 @given(parsers.parse('the otoole parameter "{name}" is not declared'))
@@ -229,3 +252,89 @@ def _format_cell(cell: object) -> str:
 
 def _format_number(number: float) -> str:
     return str(int(number)) if number.is_integer() else repr(number)
+
+
+@then(parsers.parse('the otoole CSV file "{path}" has the rows:'))
+def assert_otoole_csv_rows(path: str, datatable: list[list[str]]) -> None:
+    """Compare the rows in any order. A whole number has no decimal point, as the canonical
+    table assertion writes one."""
+    expected_header, *expected_rows = datatable
+    header, *rows = _read_csv_rows(Path(path))
+    assert header == expected_header, f"expected the header {expected_header} in {path}"
+    actual = [[_format_csv_cell(cell) for cell in row] for row in rows]
+    assert sorted(actual) == sorted(expected_rows), (
+        f"expected rows {expected_rows} in {path}, got {actual}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the otoole config "{path}" declares the parameter "{name}" '
+        'indexed by "{indices}" with default {expected:g}'
+    )
+)
+def assert_otoole_config_parameter(path: str, name: str, indices: str, expected: float) -> None:
+    entry = _read_config_entry(Path(path), name)
+    assert entry[_CONFIG_TYPE_KEY] == _PARAM_TYPE, f"expected {name} to be a {_PARAM_TYPE}"
+    assert entry[_CONFIG_INDICES_KEY] == indices.split(), f"expected {name} indexed by {indices}"
+    assert entry[_CONFIG_DTYPE_KEY] == _FLOAT_DTYPE, f"expected {name} to be a {_FLOAT_DTYPE}"
+    assert entry[_CONFIG_DEFAULT_KEY] == expected, (
+        f"expected the default of {name} to be {expected}"
+    )
+
+
+@then(parsers.parse('the otoole config "{path}" declares the set "{name}"'))
+def assert_otoole_config_set(path: str, name: str) -> None:
+    entry = _read_config_entry(Path(path), name)
+    assert entry[_CONFIG_TYPE_KEY] == _SET_TYPE, f"expected {name} to be a {_SET_TYPE}"
+    assert entry[_CONFIG_DTYPE_KEY] == _STRING_DTYPE, f"expected {name} to be a {_STRING_DTYPE}"
+
+
+@then(parsers.parse('the canonical stage "{actual}" holds the same tables as "{expected}"'))
+def assert_canonical_stage_matches(actual: str, expected: str) -> None:
+    actual_tables = _list_stage_tables(Path(actual))
+    expected_tables = _list_stage_tables(Path(expected))
+    assert sorted(actual_tables) == sorted(expected_tables), (
+        f"{actual} holds the tables {sorted(actual_tables)}, not {sorted(expected_tables)}"
+    )
+    for name in sorted(expected_tables):
+        _assert_table_matches(name, actual_tables[name], expected_tables[name])
+
+
+def _list_stage_tables(directory: Path) -> dict[str, Path]:
+    assert directory.is_dir(), f"the canonical stage {directory} is not a directory"
+    return {
+        str(path.relative_to(directory)): path for path in sorted(directory.glob(_PARQUET_GLOB))
+    }
+
+
+def _assert_table_matches(name: str, actual_path: Path, expected_path: Path) -> None:
+    actual = pl.read_parquet(actual_path)
+    expected = pl.read_parquet(expected_path)
+    assert actual.columns == expected.columns, (
+        f"{name} holds the columns {actual.columns}, not {expected.columns}"
+    )
+    assert sorted(actual.rows()) == sorted(expected.rows()), (
+        f"{name} holds the rows {actual.rows()}, not {expected.rows()}"
+    )
+
+
+def _read_config_entry(path: Path, name: str) -> dict[str, object]:
+    entries = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert name in entries, f"the config {path} declares {sorted(entries)}, not {name}"
+    entry: dict[str, object] = entries[name]
+    return entry
+
+
+def _read_csv_rows(path: Path) -> list[list[str]]:
+    assert path.is_file(), f"the CSV file {path} does not exist"
+    with path.open(encoding="utf-8", newline="") as stream:
+        return [row for row in csv.reader(stream) if row]
+
+
+def _format_csv_cell(cell: str) -> str:
+    """A number that otoole writes as `1.0` reads as the whole number `1`."""
+    try:
+        return _format_number(float(cell))
+    except ValueError:
+        return cell

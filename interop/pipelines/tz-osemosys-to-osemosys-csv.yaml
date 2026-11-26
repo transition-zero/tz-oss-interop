@@ -1,0 +1,12 @@
+source_framework: tz-osemosys
+destination_framework: osemosys-csv
+source:
+  name: stage_tz_osemosys_json
+steps:
+  - name: osemosys_canonical_build_destination_stage
+sinks:
+  - name: emit_osemosys_csv
+    params:
+      output_config_path: outputs/model/config.yaml
+      output_csv_dir: outputs/model/csv
+      output_mappings_path: outputs/osemosys_mappings.yaml
