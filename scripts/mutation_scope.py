@@ -41,6 +41,7 @@ TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW = [
     "interop/plugins/sinks/_sienna_files.py",
     "interop/plugins/sinks/emit_pypsa_*",
     "interop/plugins/sinks/emit_sienna_*",
+    "interop/plugins/sinks/emit_osemosys_*",
     "interop/plugins/sinks/emit_power_simulations_*",
     "interop/plugins/sinks/emit_results_parquet.py",
     "interop/adapters/outbound/julia_solver.py",
