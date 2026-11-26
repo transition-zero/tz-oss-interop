@@ -97,7 +97,7 @@ nodes, in this order:
 | Node | What it does |
 | --- | --- |
 | `stage_sienna_system_json` | Stages the system, its time-series sidecar and its optional `extensions.json`. |
-| `sienna_to_osemosys_map_components` | Builds the frame, the buses and the calendar. |
+| `sienna_to_osemosys_map_components` | Builds the frame, the buses, the calendar and the demands. |
 | `sienna_to_osemosys_relate_components` | Derives each set that only a parameter key names, and the default of each parameter. |
 | `osemosys_canonical_build_destination_stage` | Turns each `default_from` into a number. |
 | `emit_osemosys_csv` | Writes the configuration, the CSV files and the mappings file. |
@@ -199,7 +199,62 @@ model states a value that holds for the whole model.
 
 ### The demands
 
-Not written yet.
+`sienna_to_osemosys_map_demands` runs in `sienna_to_osemosys_map_components`, after the bus
+group and the calendar group, because a demand is keyed by a region, a fuel, a timeslice and a
+year.
+
+OSeMOSYS keys a demand by its region and its fuel, so the bus of a load states both. The
+Sienna load gives the demand for an electricity fuel. A fuel that is not electricity has no
+Sienna component, so its demand comes from a `load` record of the sidecar.
+
+#### The megawatts of each hour
+
+| The load | The megawatts of one hour | The megawatts where it states no series |
+| --- | --- | --- |
+| A `PowerLoad` or an `InterruptiblePowerLoad` | The `max_active_power` series of the load x its `max_active_power`, because the series is a share of that rating | Its `max_active_power` |
+| A `load` record that states a `bus` | The `p_set` column of the companion parquet, which states megawatts as they stand | Its `p_set` |
+
+A `load` record that states no `bus` describes a load that Sienna itself holds, so it is no
+demand of its own and the demand group reads nothing from it.
+
+#### A demand → the energy of the year and the share of each timeslice
+
+A timeslice covers one hour, so the energy of one timeslice is the megawatts of its hour times
+the hours of the year that the timeslice covers. Those hours are the `weight` of the
+representative period of the timeslice, or 8760 / the hours of the series for an invented
+calendar. Two loads on one bus state one demand between them, so their megawatts add up in
+each timeslice.
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `SpecifiedAnnualDemand` (`specified_annual_demand`) | The sum over the timeslices of the megawatts of each hour x the hours of the year that its timeslice covers, in MWh, for each year of the model | The series of each load of the fuel |
+| `SpecifiedDemandProfile` (`specified_demand_profile`) | The energy of one timeslice / the energy of the whole year, for each timeslice and each year | The same series |
+| `AccumulatedAnnualDemand` (`accumulated_annual_demand`) | The same sum, for a load named `<fuel>/accumulated` | The series of that load |
+
+The shares of one fuel sum to 1, because each one is that fuel's own energy divided by the sum
+of the same numbers. A load named `<fuel>/accumulated` states the demand that the model can
+meet at any time of the year, which is how the forward leg names it, so it gives the annual
+total and no profile.
+
+The hour of the series that a timeslice covers is the forward leg's reshape read the other
+way. The hours of one representative period follow each other from the `first_timestamp` of
+that period, so a timeslice of a period states the one hour that it covers. A timeslice of an
+invented calendar states none, so it takes the hour at its own position in the series.
+
+A demand holds in each year of the model, because a Sienna load states one series and no value
+for one year.
+
+#### What stops a load from reaching a demand
+
+A model's data never stops a translation, so each load below is left out and every other load
+still gives its demand. `decisions.md` carries a `COMPONENT_SKIPPED` event for each one, and
+one warning names three of them.
+
+| The load | Why it is left out |
+| --- | --- |
+| A load whose bus is no bus of the system | OSeMOSYS keys a demand by the region and the fuel of its bus, which the system does not state |
+| A load that asks for no energy over the timeslices of the year | A demand of no energy spreads over no profile, so a share of it is a division by zero |
+| A load whose `power_units` is not `NATURAL_UNITS` | Its megawatts are a share of a base power, so reading them as megawatts would write a number nobody meant |
 
 ### The generators and their operating modes
 
@@ -219,8 +274,8 @@ Not written yet.
 
 ## Not translated
 
-The frame, the calendar and the buses leave these out. A later section adds the ones that a
-later component group reads.
+The frame, the calendar, the buses and the demands leave these out. A later section adds the
+ones that a later component group reads.
 
 | What the Sienna system states | Why it reaches no OSeMOSYS table |
 | --- | --- |
@@ -228,6 +283,11 @@ later component group reads.
 | The `base_voltage` and the `bustype` of a bus | OSeMOSYS holds no electrical data. |
 | The `value_of_lost_load` of a `bus` record | OSeMOSYS states no unserved energy variable. |
 | The timestamps of the series | OSeMOSYS keys a value by its timeslice and not by its hour, so the calendar keeps the hour count and the weight and drops the clock. |
+| The `available` of a load | OSeMOSYS states no availability of a demand, so the leg writes the demand of every load. |
+| The `active_power`, the `reactive_power`, the `max_reactive_power` and the `base_power` of a load | OSeMOSYS holds no electrical data, and the energy of the year comes from the series and not from one hour of it. |
+| The `conformity` of a load | OSeMOSYS has no load conformity concept. |
+| The `operation_cost` of an `InterruptiblePowerLoad` | OSeMOSYS states no unserved energy variable, so it prices no demand that the model does not meet. |
+| The `carrier`, the `type` and the `sign` of a `load` record | A fuel takes its name from the bus of the load, and OSeMOSYS states no sign of a demand. |
 
 ## Open questions
 
@@ -249,3 +309,17 @@ alone does not say that a mean was taken.
 **The hours of a series that is not hourly.** The leg counts the distinct snapshots of the
 first staged series as the hours of the series. A series of another resolution therefore gives
 one timeslice for each snapshot and not for each hour.
+
+**An hour of a load's series that the calendar covers with no timeslice.** A timeslice of a
+representative period covers the hour that the `first_timestamp` of that period names, so an
+hour of the series that no period covers reaches no timeslice and its megawatts reach no
+demand. A system that this translator wrote has one hour for each timeslice, so nothing is
+lost there. A system whose periods cover part of its series loses the rest of it, and the leg
+records no event for that hour, because it records one event for each demand and not one for
+each hour. A later rung could report the hours that no period covers, as one event for each
+load.
+
+**A load record whose companion parquet states hours that no Sienna series states.** An
+invented calendar has one timeslice for each distinct snapshot of the first staged Sienna
+series. A `load` record whose companion parquet states another set of snapshots therefore
+reaches the timeslices of the hours that the two have in common, and no others.
