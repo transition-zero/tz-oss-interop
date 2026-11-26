@@ -1,4 +1,4 @@
-source_framework: osemosys
+source_framework: osemosys-csv
 destination_framework: sienna
 source:
   name: stage_osemosys_csv

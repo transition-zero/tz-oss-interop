@@ -31,7 +31,7 @@ class OtooleParameter:
 
     name: str
     key: list[str]
-    default: float
+    default: float | None
     rows: list[list[str]]
     short_name: str | None = None
     has_file: bool = True
@@ -62,7 +62,7 @@ class OtooleModelBuilder:
         self,
         name: str,
         key: list[str],
-        default: float,
+        default: float | None,
         rows: list[list[str]],
         *,
         has_file: bool = True,
@@ -116,8 +116,9 @@ def _build_parameter_entry(parameter: OtooleParameter) -> dict[str, object]:
         "type": "param",
         "indices": parameter.key,
         "dtype": "float",
-        "default": parameter.default,
     }
+    if parameter.default is not None:
+        entry["default"] = parameter.default
     if parameter.short_name is not None:
         entry["short_name"] = parameter.short_name
     return entry

@@ -22,7 +22,7 @@ scenarios(
 )
 
 _PIPELINE = "osemosys-csv-to-sienna"
-_SOURCE_FRAMEWORK = "osemosys"
+_SOURCE_FRAMEWORK = "osemosys-csv"
 _DESTINATION_FRAMEWORK = "sienna"
 _USER_MAPPINGS_PATH = "user_mappings.yaml"
 _CONFIG_PATH = "model/config.yaml"
@@ -53,7 +53,7 @@ class _MoveBracket(TranslationStep):
 """
 
 _MOVE_BRACKET_PIPELINE_YAML = """\
-source_framework: osemosys
+source_framework: osemosys-csv
 destination_framework: sienna
 source:
   name: stage_osemosys_csv
@@ -71,7 +71,7 @@ sinks:
 """
 
 _SCOPED_PIPELINE_YAML = """\
-source_framework: osemosys
+source_framework: osemosys-csv
 destination_framework: sienna
 source:
   name: stage_osemosys_csv
@@ -89,7 +89,7 @@ sinks:
 
 # The chain to PyPSA names the Sienna files that it hands over, which neither leg names alone.
 _TO_PYPSA_PIPELINE_YAML = """\
-source_framework: osemosys
+source_framework: osemosys-csv
 destination_framework: pypsa
 compose:
   - pipeline: osemosys-csv-to-sienna

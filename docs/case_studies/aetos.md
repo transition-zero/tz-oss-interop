@@ -251,7 +251,7 @@ Select `translate`. Then give these answers:
 
 | Prompt | Answer |
 | --- | --- |
-| `Source framework?` | `osemosys` |
+| `Source framework?` | `osemosys-csv` |
 | `Destination framework?` | `sienna` |
 | `Pipeline?` | `osemosys-csv-to-sienna` |
 | `source.config_path` | `../case_study_inputs/aetos/AETOS_Runner/config_otoole_AETOS.yaml` |
@@ -352,7 +352,7 @@ Select `translate` again. Then give these answers:
 
 | Prompt | Answer |
 | --- | --- |
-| `Source framework?` | `osemosys` |
+| `Source framework?` | `osemosys-csv` |
 | `Destination framework?` | `sienna` |
 | `Pipeline?` | `osemosys-csv-to-sienna-investments` |
 | `source.config_path` | `../case_study_inputs/aetos/AETOS_Runner/config_otoole_AETOS.yaml` |

@@ -160,3 +160,7 @@ class FlowParameter(StrEnum):
     OUTPUT_ACTIVITY_RATIO = "output_activity_ratio"
     TECHNOLOGY_TO_STORAGE = "technology_to_storage"
     TECHNOLOGY_FROM_STORAGE = "technology_from_storage"
+
+
+# The origin that the canonical schema gives a parameter of the core OSeMOSYS parameter set.
+CORE_OSEMOSYS_ORIGIN = "OSeMOSYS v1.0.1"

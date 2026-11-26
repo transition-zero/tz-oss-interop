@@ -197,7 +197,7 @@ you. Delete the old result before each run.
 1. In the project directory, type `rm -rf outputs/canonical` and press Enter.
 2. Type `INTEROP_LOG_LEVEL=WARNING interop` and press Enter. tz-oss-interop shows the menu.
 3. Select `translate`.
-4. At `Source framework?`, select `osemosys`.
+4. At `Source framework?`, select `osemosys-csv`.
 5. At `Destination framework?`, select `osemosys-canonical`.
 6. At `Pipeline?`, select `osemosys-csv-to-canonical`.
 7. At `source.config_path`, press Enter.
