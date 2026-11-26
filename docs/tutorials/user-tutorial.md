@@ -413,7 +413,7 @@ The mappings file needs two more parts for a translation into Sienna:
 - `carriers:` gives the Sienna type of each technology category. Refer to
   [The carrier mappings file](../translation_mappings/translation-from-osemosys-to-sienna.md#the-carrier-mappings-file).
 
-Pick `translate`, then `osemosys`, `sienna` and `osemosys-csv-to-sienna`. These prompts are new:
+Pick `translate`, then `osemosys-csv`, `sienna` and `osemosys-csv-to-sienna`. These prompts are new:
 
 | Prompt | Answer |
 | --- | --- |
