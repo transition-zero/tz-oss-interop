@@ -36,6 +36,14 @@ _WHOLE_DERIVATION = (
     "the name of the bus states no fuel, so the bus is one region that balances {fuel}"
 )
 
+# The integer id that a Sienna component names its bus under.
+BUS_ID = "bus_id"
+
+BUS_IDS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    BUS_ID: pl.Int64,
+    SiennaACBusCol.NAME: pl.Utf8,
+}
+
 BUS_MEMBERS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaACBusCol.NAME: pl.Utf8,
     REGION: pl.Utf8,
@@ -104,3 +112,18 @@ def _record_members(members: list[BusMembers], recorder: ScopedRecorder) -> None
             build_osemosys_member(FUEL, member.fuel),
         ]
         recorder.append(build_derived([source], destinations, member.derivation))
+
+
+def find_bus_members(state: State) -> pl.DataFrame | None:
+    """The region and the fuel of each bus, as the bus group wrote them; None where it wrote
+    none."""
+    return state.destination_tables.get(BUS_MEMBERS_TABLE)
+
+
+def build_bus_ids(state: State) -> pl.DataFrame:
+    """The name of each Sienna bus, by the integer id that a component names it under."""
+    table = state.source_topology.get(SiennaTable.BUSES)
+    if table is None:
+        return pl.DataFrame(schema=BUS_IDS_SCHEMA)
+    ids = table.select(SiennaACBusCol.ID, SiennaACBusCol.NAME).collect()
+    return ids.rename({SiennaACBusCol.ID: BUS_ID}).cast(pl.Schema(BUS_IDS_SCHEMA))

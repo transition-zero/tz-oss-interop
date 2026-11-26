@@ -28,8 +28,9 @@ _PARAM_TYPE = "param"
 _SET_TYPE = "set"
 _FLOAT_DTYPE = "float"
 _STRING_DTYPE = "str"
-# A sum over many rows of a share of a year carries the rounding of each row.
-_SUM_TOLERANCE = 1e-9
+# A translated number carries the rounding of each step that built it, and a sum over many
+# rows carries the rounding of each row.
+_VALUE_TOLERANCE = 1e-9
 
 
 @given("an otoole model", target_fixture="otoole_model_builder")
@@ -270,6 +271,35 @@ def assert_otoole_csv_rows(path: str, datatable: list[list[str]]) -> None:
     )
 
 
+@then(parsers.parse('the otoole CSV file "{path}" states the values:'))
+def assert_otoole_csv_values(path: str, datatable: list[list[str]]) -> None:
+    """Compare the rows in any order, and the VALUE column within a relative tolerance.
+
+    A translated number is a float that several steps built, so its last digits carry their
+    rounding. The key columns still have to match exactly.
+    """
+    expected_header, *expected_rows = datatable
+    header, *rows = _read_csv_rows(Path(path))
+    assert header == expected_header, f"expected the header {expected_header} in {path}"
+    index = header.index(VALUE_COLUMN)
+    expected = _build_values_by_key(expected_rows, index)
+    actual = _build_values_by_key(rows, index)
+    assert sorted(actual) == sorted(expected), (
+        f"expected the rows {sorted(expected)} in {path}, got {sorted(actual)}"
+    )
+    for key, value in expected.items():
+        assert math.isclose(actual[key], value, rel_tol=_VALUE_TOLERANCE), (
+            f"expected the VALUE of {key} in {path} to be {value}, got {actual[key]}"
+        )
+
+
+def _build_values_by_key(rows: list[list[str]], index: int) -> dict[tuple[str, ...], float]:
+    return {
+        tuple(cell for position, cell in enumerate(row) if position != index): float(row[index])
+        for row in rows
+    }
+
+
 @then(parsers.parse('the otoole CSV file "{path}" has {count:d} rows'))
 def assert_otoole_csv_row_count(path: str, count: int) -> None:
     _header, *rows = _read_csv_rows(Path(path))
@@ -287,7 +317,7 @@ def assert_otoole_csv_sum_by_column(path: str, expected: float, column: str) -> 
     totals = _build_sums_by_column(Path(path), column)
     assert totals, f"expected {path} to hold rows keyed by {column}"
     for key, total in sorted(totals.items()):
-        assert math.isclose(total, expected, rel_tol=_SUM_TOLERANCE), (
+        assert math.isclose(total, expected, rel_tol=_VALUE_TOLERANCE), (
             f"expected the VALUE column of {path} to sum to {expected} at {column} {key}, "
             f"got {total}"
         )

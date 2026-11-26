@@ -18,9 +18,11 @@ from interop.plugins.shared.sienna_osemosys_translations import (
 )
 from interop.plugins.steps.sienna_to_osemosys.map_buses import map_buses
 from interop.plugins.steps.sienna_to_osemosys.map_calendar import map_calendar
+from interop.plugins.steps.sienna_to_osemosys.map_demands import map_demands
 
 _MAP_BUSES = "sienna_to_osemosys_map_buses"
 _MAP_CALENDAR = "sienna_to_osemosys_map_calendar"
+_MAP_DEMANDS = "sienna_to_osemosys_map_demands"
 _MAP_FRAME = "sienna_to_osemosys_map_frame"
 
 
@@ -35,7 +37,8 @@ class SiennaToOsemosysMapComponents(TranslationStep):
         reader = state.extension_reader(self._recorder)
         self._map_frame(state)
         map_buses(state, self._scoped(_MAP_BUSES), reader)
-        map_calendar(state, self._scoped(_MAP_CALENDAR), reader)
+        mapped = map_calendar(state, self._scoped(_MAP_CALENDAR), reader)
+        map_demands(state, self._scoped(_MAP_DEMANDS), reader, mapped.calendar, mapped.years)
         return state
 
     def _map_frame(self, state: State) -> None:

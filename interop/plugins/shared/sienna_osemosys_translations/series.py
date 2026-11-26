@@ -44,3 +44,22 @@ def _find_window(summary: pl.DataFrame) -> SeriesWindow | None:
     if first is None or not hours:
         return None
     return SeriesWindow(first, int(hours))
+
+
+def list_series_snapshots(state: State) -> list[datetime]:
+    """Every distinct snapshot of the staged series, in time order.
+
+    The column is read as an aggregate, so a system of billions of rows gives one row for
+    each hour and not one for each value.
+    """
+    staged = next(iter(state.source_time_series.values()), None)
+    if staged is None:
+        return []
+    snapshots = (
+        staged.select(pl.col(StagedTimeSeriesCol.SNAPSHOT))
+        .drop_nulls()
+        .unique()
+        .sort(StagedTimeSeriesCol.SNAPSHOT)
+        .collect()
+    )
+    return snapshots[StagedTimeSeriesCol.SNAPSHOT].to_list()

@@ -13,6 +13,7 @@ value that it invents.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from interop.core.extensions import RepresentativePeriodExtension
@@ -58,13 +59,18 @@ _DISAGREEING_DAYS_NOTE = (
 
 
 class Timeslice(NamedTuple):
-    """One hour of the calendar. `weight` is how many times that hour occurs in the year."""
+    """One hour of the calendar. `weight` is how many times that hour occurs in the year.
+
+    `timestamp` is the hour of the series that the timeslice covers, which a representative
+    period states and an invented timeslice does not.
+    """
 
     name: str
     weight: float
     season: str | None = None
     day_type: str | None = None
     bracket: str | None = None
+    timestamp: datetime | None = None
 
     @property
     def year_split(self) -> float:
@@ -134,6 +140,7 @@ def _list_period_timeslices(record: RepresentativePeriodExtension) -> list[Times
             season=record.season,
             day_type=record.day_type,
             bracket=str(hour + 1),
+            timestamp=record.first_timestamp + timedelta(hours=hour),
         )
         for hour in range(record.hours)
     ]
