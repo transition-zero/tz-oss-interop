@@ -415,6 +415,7 @@ class SiennaStorageCol:
     RATING = "rating"
     INPUT_ACTIVE_POWER_LIMITS = "input_active_power_limits"
     OUTPUT_ACTIVE_POWER_LIMITS = "output_active_power_limits"
+    STORAGE_LEVEL_LIMITS = "storage_level_limits"
     EFFICIENCY = "efficiency"
     OPERATION_COST = "operation_cost"
     PRIME_MOVER_TYPE = "prime_mover_type"

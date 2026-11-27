@@ -113,6 +113,7 @@ that touches the disk can still raise.
 | `reshape_` | The same values, in a different table shape | no absent case | a change to a value |
 | `express_` | Build a `pl.Expr` that a later `with_columns`, `filter` or `select` evaluates | no absent case | a value the call computes itself, which is `build_` or `derive_` |
 | `add_` | Attach a new member to a container that exists | raises on a duplicate | the container itself, which is `build_` |
+| `append_` | Add rows to a table that another call already wrote, and keep its rows | writes the rows alone | a member of a container, which is `add_`; a column, which is `enrich_` |
 | `set_` | Replace the value of a named slot, in memory | writes it anyway | a file, which is `write_` |
 | `fill_` | Give a value to each empty slot | no absent case | a slot that already states a value |
 | `drop_` | Take rows or columns out of a table | returns, never raises | a file, which is `delete_` |

@@ -457,7 +457,85 @@ states them.
 
 ### The storages
 
-Not written yet.
+`sienna_to_osemosys_map_storages` runs in `sienna_to_osemosys_map_components`, after the
+generator group, because a storage adds two technologies of its own to the same parameter
+tables that a generator fills.
+
+A Sienna `EnergyReservoirStorage` holds its energy, its power and its two efficiencies on one
+component. OSeMOSYS holds the energy on a member of the `STORAGE` set, and it gives that member
+its power through one technology that charges it and one technology that discharges it. So each
+Sienna storage becomes one `STORAGE` member and two technologies, in the region of its bus.
+
+#### The name and the mode of each technology
+
+The forward leg kept neither the name nor the mode of the charging technology and of the
+discharging technology, so the leg invents both. The charging technology takes the name of the
+storage, a `/` and `charge`; the discharging technology takes `discharge` in the same place.
+Each one runs one mode, which the leg names 1.
+
+#### Each efficiency is the activity ratio of its own technology
+
+The forward leg merged two OSeMOSYS values into each Sienna efficiency:
+
+- `efficiency.in` is `TechnologyToStorage` / the electricity `InputActivityRatio` of the
+  charging technology.
+- `efficiency.out` is the electricity `OutputActivityRatio` of the discharging technology /
+  `TechnologyFromStorage`.
+
+Neither factor comes back alone, so the leg writes each storage link as 1 and the whole
+efficiency as the activity ratio of its technology. One unit of the activity of each technology
+is then one megawatt hour of the energy of the storage: the charging technology draws
+1 / `efficiency.in` megawatt hours from its bus to store one, and the discharging technology
+sends `efficiency.out` megawatt hours to its bus for each one that it draws. A second forward
+run over the written model therefore gives the two efficiencies of the input system.
+
+#### A storage → one STORAGE member and two technologies
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `ResidualStorageCapacity` (`residual_storage_capacity`) | The energy that the storage holds, in MWh, for each year of the model | `storage_capacity` in hours x `base_power` |
+| `StorageLevelStart` (`storage_level_start`) | The energy in the storage at the start of the model period, in MWh | `initial_storage_capacity_level` x that energy |
+| `MinStorageCharge` (`min_storage_charge`) | The lowest level of the storage, as a share of its energy, for each year | `storage_level_limits.min` |
+| `TechnologyToStorage` (`technology_to_storage`) | 1, for the charging technology at mode 1 | The rule above |
+| `TechnologyFromStorage` (`technology_from_storage`) | 1, for the discharging technology at mode 1 | The rule above |
+| `InputActivityRatio` (`input_activity_ratio`) | 1 / `efficiency.in`, for the electricity fuel of its bus at mode 1 | `efficiency.in` |
+| `OutputActivityRatio` (`output_activity_ratio`) | `efficiency.out`, for the electricity fuel of its bus at mode 1 | `efficiency.out` |
+| `ResidualCapacity` (`residual_capacity`) | The fleet of the charging technology, in MW of the energy of the storage, for each year | `input_active_power_limits.max` x `base_power` x `efficiency.in` |
+| `ResidualCapacity` | The fleet of the discharging technology, in the same unit, for each year | `output_active_power_limits.max` x `base_power` / `efficiency.out` |
+| `CapitalCostStorage` (`energy_capital_cost`) | What one MWh of new energy costs to build, for each year | `storage.energy_overnight_cost` |
+| `OperationalLifeStorage` (`storage_lifetime`) | How many years new energy operates | `storage.lifetime_years` |
+
+Each power limit of a Sienna storage is a share of its base power, so the megawatts of a limit
+are the share times the base power. The fleet of a technology is in the unit of its activity,
+which is a megawatt hour of the energy of the storage, so the megawatts of the charge limit
+multiply by `efficiency.in` and those of the discharge limit divide by `efficiency.out`.
+
+`STORAGE` and `TECHNOLOGY` both take their members from the parameter tables, so the storage
+and its two technologies reach their set files with no writer of their own. The `MinStorageCharge`
+row of a storage that may empty states 0, which is the default of the parameter, so such a
+storage gets no row; "A value that equals the default of its parameter gets no row" holds for
+every parameter of this group.
+
+#### A storage with no record
+
+`CapitalCostStorage` and `OperationalLifeStorage` come from the `storage` record of
+`extensions.json`, because no Sienna field states either: Sienna prices no build on an
+operations model. A system with no record therefore keeps every rating of its storages, and
+`decisions.md` carries one `NOT_MAPPED` event for each of the two fields that the record does
+not state.
+
+#### What stops a storage from reaching the written model
+
+A model's data never stops a translation, so each storage below is left out and every other
+storage still reaches the model. `decisions.md` carries a `COMPONENT_SKIPPED` event for each
+one, and one warning names three of them.
+
+| The storage | Why it is left out |
+| --- | --- |
+| A storage whose `power_units` is not `COMPONENT_BASE` | Its power limits are then already in megawatts, so reading them as shares of its base power would write a number nobody meant |
+| A storage of no base power | Its energy and both of its power limits are a share of that base power, so there is nothing to take a share of |
+| A storage of no `storage_capacity` | OSeMOSYS states the level of a storage as a share of its energy, so a storage of no energy gives a share that divides by zero |
+| A storage whose `efficiency.in` or `efficiency.out` is 0 | Each efficiency becomes the activity ratio of one technology, and an efficiency of 0 gives a ratio that divides by zero |
 
 ### The lines, the conversions and the trade
 
@@ -492,6 +570,11 @@ ones that a later component group reads.
 | The `fixed`, the `start_up`, the `shut_down` and the `vom_cost` of a generator's `operation_cost` | OSeMOSYS charges a fixed cost on capacity and not on a plant, which `FixedCost` holds, and it states no unit commitment cost. |
 | The `unit_size_mw`, the `p_nom_min`, the `p_nom_max`, the `discount_rate`, the `technical_life_years`, the `build_year`, the `retirement_year`, the `max_growth`, the `min_growth`, the `max_growth_rate`, the `min_growth_rate`, the `max_growth_floor`, the `capacity_factor_min`, the `production_share_min` and the `production_share_max` of a `generator` record | Each one bounds or prices new capacity, and this epic writes a dispatch model over the years that the sidecar names. OSeMOSYS holds each of them, so a later epic that writes a capacity expansion model can add them: about 100 lines in this leg. |
 | The `marginal_cost_series` of a `generator` record | OSeMOSYS prices a technology by the year and not by the hour. |
+| The `operation_cost` of a storage | OSeMOSYS prices the activity of the charging technology and of the discharging technology as a `VariableCost` of each. A later rung can write both from the charge cost and the discharge cost of the `StorageCost`: about 40 lines in this leg. `decisions.md` records neither cost today. |
+| The `prime_mover_type`, the `storage_technology_type`, the `rating`, the `active_power`, the `reactive_power`, the `conversion_factor` and the `cycle_limits` of a storage | OSeMOSYS holds no electrical data and no storage technology, and it states the energy of a storage in megawatt hours, so the conversion factor of 1 that the forward leg wrote has no home. |
+| The `storage_level_limits.max` and the `storage_target` of a storage | OSeMOSYS holds the highest level of a storage at its capacity and states no end of horizon target, which the forward leg read from `StorageBalanceYear`, `StorageBalanceSeason` and `StorageBalanceDay`. |
+| The `duration_max_hours`, the `cyclic_state_of_charge_per_period`, the `cyclic_state_of_charge_per_season`, the `cyclic_state_of_charge_per_day` and the `charge_fom_cost` of a `storage` record | `StorageMaxHours` and the three storage balance flags come from tz-osemosys v0.4.1 and not from core OSeMOSYS v1.0.1, and `FixedCost` charges the capacity of the charging technology. A later rung can write all five: about 60 lines in this leg. |
+| The `max_hours`, the `state_of_charge_initial`, the `inflow_mw` and the `inflow_series` of the `storage` record of a hydro generator | The reservoir behind a hydro generator reaches no OSeMOSYS storage. OSeMOSYS states no exogenous inflow to a storage, so a reservoir that water refills needs a charging technology that no source states. |
 
 ## Open questions
 
