@@ -17,6 +17,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.sienna_osemosys_translations import (
     build_generator_sources,
     set_generator_tables,
+    set_generator_value_tables,
 )
 
 
@@ -30,3 +31,4 @@ def map_generators(
     """Write the fleet, the flows and the hourly share of each generator of the system."""
     sources = build_generator_sources(state, extensions.read(GeneratorExtension), recorder)
     set_generator_tables(state, sources, hours, years, recorder)
+    set_generator_value_tables(state, sources, years, recorder)
