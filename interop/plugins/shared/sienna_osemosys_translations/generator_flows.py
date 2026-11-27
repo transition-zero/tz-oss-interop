@@ -28,14 +28,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.sienna_osemosys_translations.buses import build_bus_members
+from interop.plugins.shared.sienna_osemosys_translations.generator_columns import (
+    HELD_MODE,
+    SOURCE_COMPONENT,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generator_modes import (
     list_mode_records,
 )
-from interop.plugins.shared.sienna_osemosys_translations.generators import (
-    HELD_MODE,
-    SOURCE_COMPONENT,
-    GeneratorSources,
-)
+from interop.plugins.shared.sienna_osemosys_translations.generators import GeneratorSources
 
 # The canonical parameter that the row fills, and the record field that it comes from.
 PARAMETER = "parameter"

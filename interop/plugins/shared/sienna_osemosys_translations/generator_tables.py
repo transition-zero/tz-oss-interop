@@ -34,7 +34,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
-from interop.plugins.shared.sienna_constants import SiennaGeneratorCol
 from interop.plugins.shared.sienna_osemosys_translations.constants import (
     NAME_SEPARATOR,
     SIENNA_TO_OSEMOSYS_PIPELINE,
@@ -50,18 +49,19 @@ from interop.plugins.shared.sienna_osemosys_translations.events import (
     build_osemosys_parameter,
     build_sienna_source,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_columns import (
+    BASE_POWER_ATTRIBUTE,
+    BASE_POWER_MW,
+    CAPACITY_ATTRIBUTE,
+    CAPACITY_MW,
+    SOURCE_COMPONENT,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generator_flows import (
     PARAMETER,
     SOURCE_ATTRIBUTE,
     build_generator_flows,
 )
-from interop.plugins.shared.sienna_osemosys_translations.generators import (
-    BASE_POWER_MW,
-    CAPACITY_ATTRIBUTE,
-    CAPACITY_MW,
-    SOURCE_COMPONENT,
-    GeneratorSources,
-)
+from interop.plugins.shared.sienna_osemosys_translations.generators import GeneratorSources
 from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
@@ -88,16 +88,14 @@ _SHARE_DERIVATION = (
     "the megawatts that the generator can put out in the hour of the timeslice / its base power"
 )
 _UNRECOVERED_RATIO_NOTE = (
-    "the forward leg divided this value by the electricity output_activity_ratio of the "
-    "technology, which no Sienna field states, so the leg writes that ratio as 1 and this "
-    "value as the quotient that the forward leg left"
+    "the forward leg rated this technology on the output_activity_ratio of the fuel that it "
+    "puts out, which no Sienna field states, so the leg writes that ratio as 1 and this value "
+    "as the forward leg left it"
 )
 _UNRECOVERED_RATIO_WARNING = (
-    "%s: no Sienna field states the electricity output ratio that the forward leg divided by, "
-    "so the leg writes it as 1 for %d technology(ies): %s"
+    "%s: no Sienna field states the output ratio that the forward leg rated each technology "
+    "on, so the leg writes it as 1 for %d technology(ies): %s"
 )
-# The Sienna fields that the electricity output ratio scaled, and that this leg cannot undo.
-_SCALED_FIELDS = (SiennaGeneratorCol.BASE_POWER,)
 
 
 def set_generator_tables(
@@ -142,7 +140,7 @@ def _list_capacity_rows(generators: pl.DataFrame, years: Sequence[int]) -> Param
 
 def _record_capacities(generators: pl.DataFrame, recorder: ScopedRecorder) -> None:
     for row in generators.iter_rows(named=True):
-        source = _build_source(row, SiennaGeneratorCol.BASE_POWER, row[BASE_POWER_MW], UNIT_MW)
+        source = _build_source(row, row[BASE_POWER_ATTRIBUTE], row[BASE_POWER_MW], UNIT_MW)
         destination = build_osemosys_parameter(
             SupplyParameter.RESIDUAL_CAPACITY, _build_name(row), row[BASE_POWER_MW], UNIT_MW
         )
@@ -279,9 +277,8 @@ def _record_shares(
 def _report_unrecovered_ratio(generators: pl.DataFrame, recorder: ScopedRecorder) -> None:
     """One event for each value that the ratio scaled, because the leg cannot undo it."""
     for row in generators.iter_rows(named=True):
-        for field in _SCALED_FIELDS:
-            source = _build_source(row, field, row[BASE_POWER_MW], UNIT_MW)
-            recorder.append(build_not_mapped([source], _UNRECOVERED_RATIO_NOTE))
+        source = _build_source(row, row[BASE_POWER_ATTRIBUTE], row[BASE_POWER_MW], UNIT_MW)
+        recorder.append(build_not_mapped([source], _UNRECOVERED_RATIO_NOTE))
     names = generators[TECHNOLOGY].to_list()
     log.warning(
         _UNRECOVERED_RATIO_WARNING, SIENNA_TO_OSEMOSYS_PIPELINE, len(names), name_a_few(names)
