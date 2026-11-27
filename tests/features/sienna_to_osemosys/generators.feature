@@ -41,7 +41,7 @@ Feature: sienna-to-osemosys-csv turns each Sienna generator into an OSeMOSYS tec
       | REGION | TECHNOLOGY | FUEL        | MODE_OF_OPERATION | YEAR | VALUE |
       | R1     | GAS        | electricity | 1                 | 2020 | 1     |
     And the file "decisions.md" contains "writes that ratio as 1"
-    And the log contains "no Sienna field states the electricity output ratio"
+    And the log contains "no Sienna field states the output ratio"
 
   Scenario: a generator whose record states fuel buses takes in each of those fuels
     A plant that draws a fuel from a bus states the megawatt hours of that fuel that one

@@ -9,6 +9,9 @@ type: the maximum of the active power limits of a `ThermalStandard`, the rating 
 `RenewableDispatch` and the base power of a `HydroDispatch`. One value of the series therefore
 stands for that many megawatts, and the share of the whole fleet that the generator can use in
 that hour is those megawatts over its base power.
+
+A technology that supplies a fuel that is not electricity has no Sienna component, so it comes
+from a `generator` record of the sidecar and fills the same columns.
 """
 
 from __future__ import annotations
@@ -25,9 +28,7 @@ from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import FUEL, REGION, TECHNOLOGY
 from interop.plugins.shared.sienna_constants import (
     SiennaACBusCol,
-    SiennaComponent,
     SiennaGeneratorCol,
-    SiennaSeriesName,
     SiennaStructField,
     SiennaTable,
     SiennaUnitSystem,
@@ -40,69 +41,43 @@ from interop.plugins.shared.sienna_osemosys_translations.buses import (
 from interop.plugins.shared.sienna_osemosys_translations.constants import (
     SIENNA_TO_OSEMOSYS_PIPELINE,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_columns import (
+    AVAILABILITY,
+    BASE_POWER_ATTRIBUTE,
+    BASE_POWER_MW,
+    BUS_FUEL,
+    BUS_REGION,
+    CAPACITY_ATTRIBUTE,
+    CAPACITY_MW,
+    COST_ATTRIBUTE,
+    CURVE_COST_ATTRIBUTE,
+    GENERATOR_COUNTED_NOUN,
+    GENERATOR_SERIES_KEYS,
+    GENERATORS_SCHEMA,
+    HELD_MODE,
+    NO_BASE_POWER_NOTE,
+    NO_BASE_POWER_REASON,
+    OUTPUT_LIMIT_ATTRIBUTE,
+    RATED_BY_BASE_POWER,
+    RATED_BY_RATING,
+    SOURCE_COMPONENT,
+    VARIABLE_COST_MWH,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generator_modes import (
     MODE_MAPPED_FIELDS,
     build_held_mode,
     list_mode_records,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_records import (
+    build_record_generators,
+)
 from interop.plugins.shared.translation_runner import SkipReport, SkipRule, drop_skipped
 
-# The mode that the Sienna component runs, which the sidecar states by leaving it out.
-HELD_MODE = "held_mode"
-# MW. The capacity that already runs, which OSeMOSYS states as ResidualCapacity.
-BASE_POWER_MW = "base_power_mw"
-# MW. What one value of the staged series of the generator stands for.
-CAPACITY_MW = "capacity_mw"
-# The Sienna field that CAPACITY_MW comes from, which differs by Sienna type.
-CAPACITY_ATTRIBUTE = "capacity_attribute"
-# The region and the fuel of the bus of the generator, under names that no Sienna field has.
-BUS_REGION = "bus_region"
-BUS_FUEL = "bus_fuel"
-# The Sienna type that an event names as the source of the technology.
-SOURCE_COMPONENT = "source_component"
-# $/MWh. The proportional term of the cost curve of the generator, where it states one.
-VARIABLE_COST_MWH = "variable_cost_mwh"
-# The field of the generator that VARIABLE_COST_MWH comes from, which an event names.
-CURVE_COST_ATTRIBUTE = (
-    f"{SiennaGeneratorCol.OPERATION_COST}.{SiennaStructField.VARIABLE_OPERATION_COST}"
-)
-
-# The staged series that holds the hourly shape of a generator, by the type that owns each.
-GENERATOR_SERIES_KEYS = (
-    (SiennaComponent.THERMAL_STANDARD, SiennaSeriesName.MAX_ACTIVE_POWER),
-    (SiennaComponent.RENEWABLE_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
-    (SiennaComponent.RENEWABLE_NON_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
-    (SiennaComponent.HYDRO_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
-    (SiennaComponent.HYDRO_TURBINE, SiennaSeriesName.MAX_ACTIVE_POWER),
-)
-# The Sienna types whose series is a share of their rating rather than of another capacity.
-RATED_BY_RATING = (SiennaComponent.RENEWABLE_DISPATCH, SiennaComponent.RENEWABLE_NON_DISPATCH)
-# The Sienna types whose series is a share of their base power.
-RATED_BY_BASE_POWER = (SiennaComponent.HYDRO_DISPATCH, SiennaComponent.HYDRO_TURBINE)
-# The field of a generator of any other type, which an event names in full.
-OUTPUT_LIMIT_ATTRIBUTE = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
-
-GENERATORS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    TECHNOLOGY: pl.Utf8,
-    REGION: pl.Utf8,
-    FUEL: pl.Utf8,
-    HELD_MODE: pl.Utf8,
-    BASE_POWER_MW: pl.Float64,
-    CAPACITY_MW: pl.Float64,
-    CAPACITY_ATTRIBUTE: pl.Utf8,
-    VARIABLE_COST_MWH: pl.Float64,
-    SOURCE_COMPONENT: pl.Utf8,
-}
 _SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
     StagedTimeSeriesCol.COMPONENT: pl.Utf8,
     StagedTimeSeriesCol.VALUE: pl.Float64,
 }
-
-_NO_BASE_POWER_NOTE = (
-    "OSeMOSYS states the share of a fleet that a technology can use, so a generator of no "
-    "base power has no fleet to take a share of and is left out"
-)
 
 
 @dataclass(frozen=True)
@@ -117,37 +92,46 @@ class GeneratorSources:
 def build_generator_sources(
     state: State, records: ExtensionLookup[GeneratorExtension], recorder: ScopedRecorder
 ) -> GeneratorSources:
-    """Each Sienna generator, keyed by the region and the electricity fuel of its bus."""
+    """Each technology of the system, keyed by the region and the fuel of its bus."""
     members = find_bus_members(state)
-    staged = state.source_topology.get(SiennaTable.GENERATORS)
-    if members is None or staged is None:
+    if members is None:
         return GeneratorSources(
             pl.DataFrame(schema=GENERATORS_SCHEMA), _build_empty_series(), records
         )
+    held = _build_component_generators(state, members, records, recorder)
+    relayed = build_record_generators(records, _list_staged_names(state), members, recorder)
+    table = pl.concat([held, relayed])
+    return GeneratorSources(table, _build_series(state, table), records)
+
+
+# --- the generators that a Sienna component holds -------------------------------
+
+
+def _build_component_generators(
+    state: State,
+    members: pl.DataFrame,
+    records: ExtensionLookup[GeneratorExtension],
+    recorder: ScopedRecorder,
+) -> pl.DataFrame:
+    """Each Sienna generator, whose integer bus id names the bus that states its region."""
+    staged = state.source_topology.get(SiennaTable.GENERATORS)
+    if staged is None:
+        return pl.DataFrame(schema=GENERATORS_SCHEMA)
     rows = _drop_unusable(staged.collect(), recorder)
     keyed = rows.join(_build_bus_keys(state, members), on=SiennaGeneratorCol.BUS, how="inner")
     table = keyed.select(_list_values(keyed)).with_columns(
         _build_held_modes(keyed, records), _build_curve_costs(keyed)
     )
-    return GeneratorSources(
-        table.select(list(GENERATORS_SCHEMA)), _build_series(state, table), records
-    )
+    return table.select(list(GENERATORS_SCHEMA))
 
 
-def _drop_unusable(rows: pl.DataFrame, recorder: ScopedRecorder) -> pl.DataFrame:
-    """One Sienna type at a time, so each report names the type of the generator it drops."""
-    kept = [
-        drop_skipped(part, _list_skip_rules(str(sienna_type)), recorder)
-        for (sienna_type,), part in rows.group_by(
-            SiennaGeneratorCol.SIENNA_TYPE, maintain_order=True
-        )
-    ]
-    return pl.concat(kept) if kept else rows
-
-
-def _list_skip_rules(component: str) -> list[SkipRule]:
-    """A model's data never stops a translation, so each unusable generator goes alone."""
-    return [_build_power_units_rule(component), _build_base_power_rule(component)]
+def _list_staged_names(state: State) -> list[str]:
+    """Each Sienna generator, so a record of that name is read as that generator's own."""
+    staged = state.source_topology.get(SiennaTable.GENERATORS)
+    if staged is None:
+        return []
+    names = staged.select(SiennaGeneratorCol.NAME).collect()
+    return names[SiennaGeneratorCol.NAME].to_list()
 
 
 def _build_bus_keys(state: State, members: pl.DataFrame) -> pl.DataFrame:
@@ -169,8 +153,11 @@ def _list_values(table: pl.DataFrame) -> list[pl.Expr]:
         pl.col(BUS_REGION).alias(REGION),
         pl.col(BUS_FUEL).alias(FUEL),
         pl.col(SiennaGeneratorCol.BASE_POWER).cast(pl.Float64).alias(BASE_POWER_MW),
+        pl.lit(SiennaGeneratorCol.BASE_POWER).alias(BASE_POWER_ATTRIBUTE),
         _express_capacity(table).alias(CAPACITY_MW),
         _express_capacity_attribute().alias(CAPACITY_ATTRIBUTE),
+        pl.lit(CURVE_COST_ATTRIBUTE).alias(COST_ATTRIBUTE),
+        pl.lit(None, dtype=pl.Float64).alias(AVAILABILITY),
         pl.col(SiennaGeneratorCol.SIENNA_TYPE).alias(SOURCE_COMPONENT),
     ]
 
@@ -263,6 +250,22 @@ def _build_empty_series() -> pl.LazyFrame:
 # --- the generators that no technology can come from ----------------------------
 
 
+def _drop_unusable(rows: pl.DataFrame, recorder: ScopedRecorder) -> pl.DataFrame:
+    """One Sienna type at a time, so each report names the type of the generator it drops."""
+    kept = [
+        drop_skipped(part, _list_skip_rules(str(sienna_type)), recorder)
+        for (sienna_type,), part in rows.group_by(
+            SiennaGeneratorCol.SIENNA_TYPE, maintain_order=True
+        )
+    ]
+    return pl.concat(kept) if kept else rows
+
+
+def _list_skip_rules(component: str) -> list[SkipRule]:
+    """A model's data never stops a translation, so each unusable generator goes alone."""
+    return [_build_power_units_rule(component), _build_base_power_rule(component)]
+
+
 def _build_power_units_note(row: dict[str, object]) -> str:
     return (
         f"power_units is {row[SiennaStructField.POWER_UNITS]}; tz-oss-interop reads "
@@ -278,7 +281,7 @@ def _build_power_units_rule(component: str) -> SkipRule:
         component=component,
         name_col=SiennaGeneratorCol.NAME,
         reason="state a power basis this reader does not read",
-        counted_noun="generator(s)",
+        counted_noun=GENERATOR_COUNTED_NOUN,
         note=_build_power_units_note,
         attribute_col=SiennaStructField.POWER_UNITS,
     )
@@ -292,9 +295,9 @@ def _build_base_power_rule(component: str) -> SkipRule:
         framework=Framework.SIENNA,
         component=component,
         name_col=SiennaGeneratorCol.NAME,
-        reason="state no base power",
-        counted_noun="generator(s)",
-        note=_NO_BASE_POWER_NOTE,
+        reason=NO_BASE_POWER_REASON,
+        counted_noun=GENERATOR_COUNTED_NOUN,
+        note=NO_BASE_POWER_NOTE,
         attribute_col=SiennaGeneratorCol.BASE_POWER,
     )
     return SkipRule(pl.col(SiennaGeneratorCol.BASE_POWER) > 0, report)

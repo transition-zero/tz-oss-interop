@@ -287,7 +287,9 @@ value as the quotient that the forward leg left. One megawatt hour of the activi
 written technology is then one megawatt hour of electricity, and the written model is the input
 model with every value of that technology divided by one number. `decisions.md` carries a
 `NOT_MAPPED` event for each value that the ratio scaled, and one warning names three
-technologies.
+technologies. A technology that no Sienna component holds follows the same rule, with the
+output ratio of the fuel that it puts out; "A technology that no Sienna component holds" below
+states it.
 
 `CapacityToActivityUnit` is 8760 for the same reason: the units of the written model are MW and
 MWh, so one MW of capacity runs the 8760 MWh of a whole year. The frame group writes that
@@ -396,24 +398,62 @@ technology may not run.
 their tables, and the default run leaves their files out and names each one in a warning, as
 "The parameter set" above states. Set the sink parameter `wants_every_parameter` to write them.
 
-**`AvailabilityFactor` takes its default.** No Sienna generator states a limit on the energy of
-a year of its own, because the forward leg folded that limit into the hourly derate. "The share
-of each hour" above states the whole rule.
+**`AvailabilityFactor` takes its default for a Sienna generator.** No Sienna generator states a
+limit on the energy of a year of its own, because the forward leg folded that limit into the
+hourly derate. "The share of each hour" above states the whole rule. A technology that no
+Sienna component holds does state one, and the section below gives it.
+
+#### A technology that no Sienna component holds
+
+Sienna holds electricity only, so a technology that supplies a fuel that is not electricity has
+no Sienna component. The forward leg wrote such a technology as a `generator` record of the
+sidecar, and this leg reads that record back as one OSeMOSYS technology. A demand for a fuel
+that is not electricity then has a producer.
+
+A `generator` record gives a technology of its own under two conditions. It must state a `bus`,
+and no Sienna generator may carry its name. The record of a Sienna generator holds the fields
+that no Sienna field holds, and it states no `bus`, so it gives no second technology.
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `ResidualCapacity` (`residual_capacity`) | The MW of the fuel that already run, in each year of the model | `generator.p_nom` |
+| `OutputActivityRatio` (`output_activity_ratio`) | 1, for the fuel of the bus of the record, at the held mode | The rule below |
+| `VariableCost` (`variable_operation_cost`) | What one MWh of the fuel costs, in $/MWh, in each year | `generator.marginal_cost` |
+| `AvailabilityFactor` (`availability_factor`) | The share of the energy of a year that the technology can make, in each year | `generator.p_max_pu` |
+
+The region and the fuel of such a technology come from the bus of its record, under the same
+rule as the bus group. The record names the bus, so a bus that the bus group placed gives its
+region and its fuel, and the name of the bus alone answers a bus that the bus group did not
+place.
+
+Every other parameter of the two sections above comes from the same field of the record for
+both routes. So the emission rates, the capital cost, the fixed cost, the life, the other modes
+and the activity limits of such a technology need no rule of their own.
+
+**The output ratio of such a technology is 1 for the same reason.** The forward leg rated it on
+the fuel that it puts out. It multiplied the `p_nom` and the activity limits of the record by
+the `OutputActivityRatio` of that fuel, and it divided the cost and the emission rates of the
+record by the same ratio. No Sienna field and no record field states the ratio, so this leg
+writes the ratio as 1 and every other value as the quotient that the forward leg left.
+`decisions.md` carries a `NOT_MAPPED` event against the `p_nom` of the record.
+
+**`AvailabilityFactor` comes back for such a technology and not for a Sienna generator.** The
+forward leg wrote the `AvailabilityFactor` of a technology that no Sienna component holds as the
+`p_max_pu` of its record, and it folded the `AvailabilityFactor` of a Sienna generator into the
+hourly derate of its series. So the two routes answer that parameter differently.
 
 #### What stops a generator from reaching a technology
 
 A model's data never stops a translation, so each generator below is left out and every other
 generator still gives its technology. `decisions.md` carries a `COMPONENT_SKIPPED` event for
-each one, and one warning names three of them under the Sienna type that states them.
+each one, and one warning names three of them under the Sienna type, or the record kind, that
+states them.
 
 | The generator | Why it is left out |
 | --- | --- |
 | A generator whose `power_units` is not `NATURAL_UNITS` | Its megawatts are a share of a base power, so reading them as megawatts would write a number nobody meant |
 | A generator of no base power | OSeMOSYS states the share of a fleet that a technology can use, and a generator of no fleet has no share to state |
-
-#### Not written yet
-
-The technology of a `generator` record of a fuel that is not electricity.
+| A `generator` record of no `p_nom` | The same reason, because the megawatts of the fuel that already run are the fleet of such a technology |
 
 ### The storages
 

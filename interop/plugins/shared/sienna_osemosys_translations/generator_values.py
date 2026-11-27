@@ -41,6 +41,14 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     InvestmentParameter,
     SupplyParameter,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_columns import (
+    AVAILABILITY,
+    COST_ATTRIBUTE,
+    HELD_MODE,
+    RECORD_AVAILABILITY_ATTRIBUTE,
+    SOURCE_COMPONENT,
+    VARIABLE_COST_MWH,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generator_flows import (
     PARAMETER,
     SOURCE_ATTRIBUTE,
@@ -48,13 +56,7 @@ from interop.plugins.shared.sienna_osemosys_translations.generator_flows import 
 from interop.plugins.shared.sienna_osemosys_translations.generator_modes import (
     list_mode_records,
 )
-from interop.plugins.shared.sienna_osemosys_translations.generators import (
-    CURVE_COST_ATTRIBUTE,
-    HELD_MODE,
-    SOURCE_COMPONENT,
-    VARIABLE_COST_MWH,
-    GeneratorSources,
-)
+from interop.plugins.shared.sienna_osemosys_translations.generators import GeneratorSources
 
 # The unit that an event states for the value of the row.
 UNIT = "unit"
@@ -163,6 +165,7 @@ def _list_values(generator: dict[str, Any], record: GeneratorExtension) -> Itera
     held = str(generator[HELD_MODE])
     yield from _list_held_cost(generator, record, held)
     yield from _list_held_rates(record, held)
+    yield from _list_availability(generator)
     yield from _list_record_values(record, _CAPACITY_VALUES)
     yield from _list_record_values(record, _HORIZON_LIMITS)
     yield from _list_yearly_values(record, _ANNUAL_LIMITS)
@@ -181,7 +184,9 @@ def _list_held_cost(
     stated = own if own is not None else generator[VARIABLE_COST_MWH]
     if stated is None:
         return
-    attribute = CURVE_COST_ATTRIBUTE if own is None else f"{EXTENSIONS_PREFIX}{_OWN_COST_FIELD}"
+    attribute = (
+        generator[COST_ATTRIBUTE] if own is None else f"{EXTENSIONS_PREFIX}{_OWN_COST_FIELD}"
+    )
     yield _Value(
         SupplyParameter.VARIABLE_OPERATION_COST,
         stated,
@@ -197,6 +202,19 @@ def _list_held_rates(record: GeneratorExtension, held: str) -> Iterator[_Value]:
     field = "own_emission_rates_t_per_mwh" if own is not None else "emission_rates_t_per_mwh"
     rates = own if own is not None else record.emission_rates_t_per_mwh
     yield from _list_rates(rates, held, f"{EXTENSIONS_PREFIX}{field}")
+
+
+def _list_availability(generator: dict[str, Any]) -> Iterator[_Value]:
+    """Only a technology that no Sienna component holds states a limit on the energy of a
+    year."""
+    stated = generator[AVAILABILITY]
+    if stated is not None:
+        yield _Value(
+            SupplyParameter.AVAILABILITY_FACTOR,
+            stated,
+            RECORD_AVAILABILITY_ATTRIBUTE,
+            UNIT_PER_UNIT,
+        )
 
 
 # --- the values that the record states ------------------------------------------

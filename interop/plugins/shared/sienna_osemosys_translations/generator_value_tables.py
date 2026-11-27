@@ -40,6 +40,9 @@ from interop.plugins.shared.sienna_osemosys_translations.events import (
     build_osemosys_parameter,
     build_sienna_source,
 )
+from interop.plugins.shared.sienna_osemosys_translations.generator_columns import (
+    SOURCE_COMPONENT,
+)
 from interop.plugins.shared.sienna_osemosys_translations.generator_flows import (
     PARAMETER,
     SOURCE_ATTRIBUTE,
@@ -48,10 +51,7 @@ from interop.plugins.shared.sienna_osemosys_translations.generator_values import
     UNIT,
     build_generator_values,
 )
-from interop.plugins.shared.sienna_osemosys_translations.generators import (
-    SOURCE_COMPONENT,
-    GeneratorSources,
-)
+from interop.plugins.shared.sienna_osemosys_translations.generators import GeneratorSources
 
 # Every parameter that a cost, an emission rate or a bound of a technology fills.
 GENERATOR_VALUE_PARAMETERS: tuple[str, ...] = (
@@ -60,6 +60,7 @@ GENERATOR_VALUE_PARAMETERS: tuple[str, ...] = (
     InvestmentParameter.CAPITAL_COST,
     InvestmentParameter.LIFETIME,
     SupplyParameter.EMISSION_RATE,
+    SupplyParameter.AVAILABILITY_FACTOR,
     SupplyParameter.ACTIVITY_LOWER_LIMIT,
     SupplyParameter.ACTIVITY_UPPER_LIMIT,
     ActivityParameter.MODEL_PERIOD_LOWER_LIMIT,
