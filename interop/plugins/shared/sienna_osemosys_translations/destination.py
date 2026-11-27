@@ -7,7 +7,7 @@ otoole CSV file does; every other key column holds the name of a set member.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import polars as pl
@@ -40,11 +40,34 @@ def build_parameter_schema(parameter: str) -> dict[str, pl.DataType | type[pl.Da
     return {**columns, VALUE_COL: pl.Float64}
 
 
+def build_rows_over_years(
+    parameter: str, keys: Mapping[str, Any], value: float, years: Sequence[int]
+) -> ParameterRows:
+    """One row of `parameter` for each year in `years`, or one row where it takes no year."""
+    if YEAR not in load_canonical_schema().parameters[parameter].column_names:
+        return [{**keys, VALUE_COL: value}]
+    return [{**keys, YEAR: year, VALUE_COL: value} for year in years]
+
+
 def set_parameter_table(state: State, parameter: str, rows: ParameterRows) -> None:
     """Write one canonical parameter table, which has no rows where the leg built none."""
     table = pl.DataFrame(list(rows), schema=build_parameter_schema(parameter))
     set_destination_canonical_table(
         state, CanonicalTable(TableKind.PARAMETER, parameter, table.lazy())
+    )
+
+
+def append_parameter_rows(state: State, parameter: str, rows: ParameterRows) -> None:
+    """Add rows to one canonical parameter table, and keep the rows another group wrote.
+
+    Two component groups can fill one parameter: a Sienna generator and the technology that
+    discharges a Sienna storage both state a `ResidualCapacity`.
+    """
+    written = list_destination_parameter_tables(state).get(parameter)
+    table = pl.DataFrame(list(rows), schema=build_parameter_schema(parameter))
+    whole = table if written is None else pl.concat([written.collect(), table])
+    set_destination_canonical_table(
+        state, CanonicalTable(TableKind.PARAMETER, parameter, whole.lazy())
     )
 
 

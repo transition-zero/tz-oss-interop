@@ -33,6 +33,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.sienna_osemosys_translations.constants import NAME_SEPARATOR
 from interop.plugins.shared.sienna_osemosys_translations.destination import (
     ParameterRows,
+    build_rows_over_years,
     set_parameter_table,
 )
 from interop.plugins.shared.sienna_osemosys_translations.events import (
@@ -101,25 +102,26 @@ def _list_stated(values: pl.DataFrame, parameter: str) -> pl.DataFrame:
 
 def _list_rows(stated: pl.DataFrame, parameter: str, years: Sequence[int]) -> ParameterRows:
     """The key columns that the schema names, over the years that the row holds in."""
-    columns = load_canonical_schema().parameters[parameter].column_names
+    columns = [
+        column
+        for column in load_canonical_schema().parameters[parameter].column_names
+        if column != YEAR
+    ]
     return [
-        {**{column: _read_key(row, column, year) for column in columns}, VALUE_COL: row[VALUE_COL]}
+        row_of_year
         for row in stated.iter_rows(named=True)
-        for year in _list_row_years(row, columns, years)
+        for row_of_year in build_rows_over_years(
+            parameter,
+            {column: row[column] for column in columns},
+            row[VALUE_COL],
+            _list_row_years(row, years),
+        )
     ]
 
 
-def _list_row_years(
-    row: dict[str, Any], columns: Sequence[str], years: Sequence[int]
-) -> list[int | None]:
-    """A parameter with no year column gives one row, whose year no key column reads."""
-    if YEAR not in columns:
-        return [None]
-    return [row[YEAR]] if row[YEAR] is not None else list(years)
-
-
-def _read_key(row: dict[str, Any], column: str, year: int | None) -> Any:
-    return year if column == YEAR else row[column]
+def _list_row_years(row: dict[str, Any], years: Sequence[int]) -> Sequence[int]:
+    """A value that the record keys by one year holds in that year and in no other."""
+    return [row[YEAR]] if row[YEAR] is not None else years
 
 
 def _record_values(stated: pl.DataFrame, parameter: str, recorder: ScopedRecorder) -> None:

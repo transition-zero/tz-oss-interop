@@ -330,6 +330,17 @@ class SiennaSystemBuilder:
             }
         )
 
+    def _storage_by_name(self, name: str) -> dict[str, Any]:
+        for storage in self._storage:
+            if storage["name"] == name:
+                return storage
+        raise KeyError(f"no storage {name!r} added yet")
+
+    def set_storage_field(self, name: str, field: str, value: Any) -> None:
+        """Set one field of an EnergyReservoirStorage that the add call does not take."""
+        self._check_not_saved(f"{field} for EnergyReservoirStorage {name!r}")
+        self._storage_by_name(name)[field] = value
+
     def _generator_by_name(self, name: str) -> dict[str, Any]:
         for generator in self._generators:
             if generator["name"] == name:

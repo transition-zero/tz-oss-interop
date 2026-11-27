@@ -642,6 +642,14 @@ def given_power_load_max_active_power_series_from(
     sienna_system_builder.add_time_series_from("PowerLoad", name, "max_active_power", values, start)
 
 
+@given(parsers.parse('the EnergyReservoirStorage "{name}" states "{field}" set to {value}'))
+def given_energy_reservoir_storage_states_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, value: str
+) -> None:
+    """One field of an EnergyReservoirStorage that the add step does not take, as JSON."""
+    sienna_system_builder.set_storage_field(name, field, json.loads(value))
+
+
 @given(parsers.parse('the EnergyReservoirStorage "{name}" has a {series_name} series {series}'))
 def given_energy_reservoir_storage_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series_name: str, series: str

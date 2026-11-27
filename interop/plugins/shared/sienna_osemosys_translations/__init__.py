@@ -40,6 +40,13 @@ from interop.plugins.shared.sienna_osemosys_translations.generators import (
 from interop.plugins.shared.sienna_osemosys_translations.hours import build_calendar_hours
 from interop.plugins.shared.sienna_osemosys_translations.series import find_series_window
 from interop.plugins.shared.sienna_osemosys_translations.sets import set_derived_set_tables
+from interop.plugins.shared.sienna_osemosys_translations.storage_tables import (
+    set_storage_tables,
+)
+from interop.plugins.shared.sienna_osemosys_translations.storages import (
+    StorageSources,
+    build_storage_sources,
+)
 
 __all__ = [
     "BUS_MEMBERS_TABLE",
@@ -47,12 +54,14 @@ __all__ = [
     "Calendar",
     "DemandSources",
     "GeneratorSources",
+    "StorageSources",
     "build_bus_members",
     "build_calendar",
     "build_calendar_hours",
     "build_demand_sources",
     "build_generator_sources",
     "build_model_years",
+    "build_storage_sources",
     "find_series_window",
     "list_bus_members",
     "list_destination_parameter_tables",
@@ -63,6 +72,7 @@ __all__ = [
     "set_derived_set_tables",
     "set_generator_tables",
     "set_generator_value_tables",
+    "set_storage_tables",
     "set_frame_parameters",
     "set_parameter_table",
     "set_set_table",
