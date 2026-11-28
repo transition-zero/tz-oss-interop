@@ -121,6 +121,21 @@ def given_system_contains_hydro_reservoir(
     )
 
 
+@given(parsers.parse('the HydroReservoir "{name}" states "{field}" set to {value}'))
+def given_hydro_reservoir_states_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, value: str
+) -> None:
+    """One field of a HydroReservoir that the add step does not take, stated as JSON."""
+    sienna_system_builder.set_reservoir_field(name, field, json.loads(value))
+
+
+@given(parsers.parse('the HydroReservoir "{name}" feeds the HydroTurbine "{turbine}"'))
+def given_hydro_reservoir_feeds_turbine(
+    sienna_system_builder: SiennaSystemBuilder, name: str, turbine: str
+) -> None:
+    sienna_system_builder.add_reservoir_turbine(name, turbine)
+
+
 @given(parsers.parse('the HydroReservoir "{name}" has a per-unit {series} series {values}'))
 def given_hydro_reservoir_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str, values: str

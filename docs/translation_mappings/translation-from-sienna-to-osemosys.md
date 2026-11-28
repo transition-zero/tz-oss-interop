@@ -97,7 +97,7 @@ nodes, in this order:
 | Node | What it does |
 | --- | --- |
 | `stage_sienna_system_json` | Stages the system, its time-series sidecar and its optional `extensions.json`. |
-| `sienna_to_osemosys_map_components` | Builds the frame, the buses, the calendar, the demands and the generators. |
+| `sienna_to_osemosys_map_components` | Builds the frame, the buses, the calendar, the demands, the generators, the storages and the reservoirs. |
 | `sienna_to_osemosys_relate_components` | Derives each set that only a parameter key names, and the default of each parameter. |
 | `osemosys_canonical_build_destination_stage` | Turns each `default_from` into a number. |
 | `emit_osemosys_csv` | Writes the configuration, the CSV files and the mappings file. |
@@ -124,6 +124,7 @@ and `decisions.md` records the count that it gained.
 | `DAILYTIMEBRACKET` (`daily_time_bracket`) | `sienna_to_osemosys_relate_components` | The `daily_time_bracket` column of each parameter table |
 | `TECHNOLOGY` (`technology`) | `sienna_to_osemosys_relate_components` | The `technology` column of each parameter table |
 | `MODE_OF_OPERATION` (`operating_mode`) | `sienna_to_osemosys_relate_components` | The `operating_mode` column of each parameter table |
+| `STORAGE` (`storage`) | `sienna_to_osemosys_relate_components` | The `storage` column of each parameter table |
 
 #### A bus → one region and one fuel
 
@@ -537,6 +538,76 @@ one, and one warning names three of them.
 | A storage of no `storage_capacity` | OSeMOSYS states the level of a storage as a share of its energy, so a storage of no energy gives a share that divides by zero |
 | A storage whose `efficiency.in` or `efficiency.out` is 0 | Each efficiency becomes the activity ratio of one technology, and an efficiency of 0 gives a ratio that divides by zero |
 
+### The reservoirs
+
+`sienna_to_osemosys_map_reservoirs` runs in `sienna_to_osemosys_map_components`, after the
+generator group and the storage group, because a reservoir reads the technology that the
+generator group wrote for each of its turbines.
+
+A Sienna `HydroReservoir` holds the energy behind a `HydroTurbine`, and the turbine spends that
+energy. OSeMOSYS holds such energy on a member of the `STORAGE` set, and a technology that
+draws on that member states a storage link. So each reservoir becomes one `STORAGE` member, and
+each turbine that the reservoir feeds gains the link that spends its energy.
+
+#### The turbine stays one technology
+
+The generator group already wrote each `HydroTurbine` as a technology of its own bus, with the
+fleet that its base power states and an electricity output ratio of 1. So this group writes no
+second technology for a turbine: it joins the `downstream_turbines` of the reservoir to the
+table of the generator group, by the integer id that the reservoir names each turbine under,
+and writes one `TechnologyFromStorage` row for each pair. The row takes the operating mode that
+the generator group read for that turbine.
+
+`TechnologyFromStorage` and the electricity `OutputActivityRatio` of the turbine are both 1, so
+one unit of the activity of the turbine draws one megawatt hour from the reservoir and sends
+one megawatt hour to its bus. The level of an energy reservoir is already the energy that its
+turbines can deliver, so the `efficiency` of the turbine has no part in the link.
+
+#### The inflow gets a charging technology of its own
+
+No Sienna component puts the inflow into a reservoir, so the group writes one technology for
+it, named `<reservoir>/inflow`, running mode 1. Its storage link is 1 and its fleet is the
+megawatts of the inflow, and it takes in no fuel. One unit of its activity therefore stores one
+megawatt hour of the energy of the reservoir, and the inflow bounds the energy that it can
+store in each timeslice. The solve can leave that technology idle, which is the spillage of the
+reservoir. A reservoir of no inflow gets no such technology.
+
+#### The region of the reservoir
+
+A `HydroReservoir` names no bus, so the bus of a turbine that it feeds is what states the
+region of the storage. Every turbine of one reservoir must name the same region, because
+OSeMOSYS keys a storage by one region.
+
+#### A reservoir → one STORAGE member and the links that move its energy
+
+| Parameter | Value | Source |
+| --- | --- | --- |
+| `ResidualStorageCapacity` (`residual_storage_capacity`) | The energy that the reservoir holds, in MWh, for each year of the model | `storage_level_limits.max` |
+| `StorageLevelStart` (`storage_level_start`) | The energy in the reservoir at the start of the model period, in MWh | `initial_level` |
+| `MinStorageCharge` (`min_storage_charge`) | The lowest level of the reservoir, as a share of its energy, for each year | `storage_level_limits.min` / `storage_level_limits.max` |
+| `TechnologyFromStorage` (`technology_from_storage`) | 1, for each turbine of the reservoir at the mode that the generator group read | `downstream_turbines` |
+| `TechnologyToStorage` (`technology_to_storage`) | 1, for the inflow technology at mode 1 | `inflow` |
+| `ResidualCapacity` (`residual_capacity`) | The fleet of the inflow technology, in MW, for each year | `inflow` |
+
+A reservoir states its levels in megawatt hours and its inflow in megawatts only where its
+`level_data_type` is `ENERGY`. `STORAGE` and `TECHNOLOGY` both take their members from the
+parameter tables, so the reservoir and its inflow technology reach their set files with no
+writer of their own. "A value that equals the default of its parameter gets no row" holds for
+every parameter of this group, so a reservoir that may empty writes no `MinStorageCharge` row.
+
+#### What stops a reservoir from reaching the written model
+
+A model's data never stops a translation, so each reservoir below is left out and every other
+reservoir still reaches the model. `decisions.md` carries a `COMPONENT_SKIPPED` event for each
+one, and one warning names three of them.
+
+| The reservoir | Why it is left out |
+| --- | --- |
+| A reservoir whose `level_data_type` is not `ENERGY` | A level in cubic metres or in metres of head becomes megawatt hours through the `head_to_volume_factor` of the reservoir and the `conversion_factor` of its turbine, and OSeMOSYS holds neither |
+| A reservoir of no `storage_level_limits.max` | OSeMOSYS states the lowest level of a storage as a share of the energy that it holds, so a reservoir of no energy gives a share that divides by zero |
+| A reservoir that feeds no `HydroTurbine` that reached a technology | The bus of such a turbine is what states the region of the storage, so the reservoir has no region and nothing that spends its energy |
+| A reservoir whose turbines name more than one region | OSeMOSYS keys a storage by one region |
+
 ### The lines, the conversions and the trade
 
 Not written yet.
@@ -574,7 +645,13 @@ ones that a later component group reads.
 | The `prime_mover_type`, the `storage_technology_type`, the `rating`, the `active_power`, the `reactive_power`, the `conversion_factor` and the `cycle_limits` of a storage | OSeMOSYS holds no electrical data and no storage technology, and it states the energy of a storage in megawatt hours, so the conversion factor of 1 that the forward leg wrote has no home. |
 | The `storage_level_limits.max` and the `storage_target` of a storage | OSeMOSYS holds the highest level of a storage at its capacity and states no end of horizon target, which the forward leg read from `StorageBalanceYear`, `StorageBalanceSeason` and `StorageBalanceDay`. |
 | The `duration_max_hours`, the `cyclic_state_of_charge_per_period`, the `cyclic_state_of_charge_per_season`, the `cyclic_state_of_charge_per_day` and the `charge_fom_cost` of a `storage` record | `StorageMaxHours` and the three storage balance flags come from tz-osemosys v0.4.1 and not from core OSeMOSYS v1.0.1, and `FixedCost` charges the capacity of the charging technology. A later rung can write all five: about 60 lines in this leg. |
-| The `max_hours`, the `state_of_charge_initial`, the `inflow_mw` and the `inflow_series` of the `storage` record of a hydro generator | The reservoir behind a hydro generator reaches no OSeMOSYS storage. OSeMOSYS states no exogenous inflow to a storage, so a reservoir that water refills needs a charging technology that no source states. |
+| The `max_hours`, the `state_of_charge_initial`, the `inflow_mw` and the `inflow_series` of the `storage` record of a hydro generator | The reservoir of a hydro generator reaches an OSeMOSYS storage only where the system holds it as a `HydroReservoir` component. A `storage` record of a hydro generator states the same three values, and this leg reads none of them: about 40 lines in this leg would read the record into the same rows that the reservoir group writes. |
+| The `outflow` of a reservoir | OSeMOSYS states no outflow that a storage must release, so the written model holds the energy of the reservoir and not the water that leaves it. `decisions.md` carries one `NOT_MAPPED` event for each reservoir that states a non-zero outflow, and one warning names three of them. |
+| The `spillage_limits` and the `evaporative_loss` of a reservoir | OSeMOSYS states neither. The solve can leave the inflow technology idle, which spills the whole inflow, and nothing bounds that spillage or takes a standing loss off the level. |
+| The `level_targets` of a reservoir | OSeMOSYS states no end of horizon target for a storage, as it states none for an `EnergyReservoirStorage`. |
+| The `available`, the `intake_elevation`, the `head_to_volume_factor` and the `upstream_reservoirs` of a reservoir | OSeMOSYS holds no cascade and no water, so a chain of reservoirs reaches one storage for each reservoir and no flow between them. |
+| The `operation_cost` of a reservoir | OSeMOSYS prices the activity of a technology and the capacity of a storage, and it prices neither a level shortage, nor a level surplus, nor spillage. |
+| The `efficiency`, the `conversion_factor`, the `outflow_limits`, the `travel_time` and the `powerhouse_elevation` of a `HydroTurbine` | The level of an energy reservoir is already the energy that its turbines can deliver, so the storage link of a turbine is 1 and its efficiency has no part in it. OSeMOSYS holds no water and no travel time. |
 
 ## Open questions
 
@@ -618,10 +695,11 @@ into one hourly derate. This leg writes the whole derate as `CapacityFactor`, so
 stated both no longer limits the energy of its year with a factor of its own. The hourly limit
 of the written model is the hourly limit of the input model, so the dispatch is the same.
 
-**A `HydroTurbine` reaches no reservoir.** A turbine becomes a technology with its own fleet
-and its own hourly share, and the energy of the reservoir behind it reaches OSeMOSYS as a
-storage. So a written model holds the turbine with no energy budget until the storage group
-writes one.
+**A `HydroTurbine` whose reservoir the system does not hold as a component.** The reservoir
+group gives a turbine its energy budget through the `HydroReservoir` that feeds it. A system
+that holds the turbine and no reservoir, or that holds the reservoir as a `storage` record of
+the sidecar, therefore reaches a technology with its own fleet and its own hourly share and no
+energy budget.
 
 **A load record whose companion parquet states hours that no Sienna series states.** An
 invented calendar has one timeslice for each distinct snapshot of the first staged Sienna

@@ -38,6 +38,9 @@ from interop.plugins.shared.sienna_osemosys_translations.generators import (
     build_generator_sources,
 )
 from interop.plugins.shared.sienna_osemosys_translations.hours import build_calendar_hours
+from interop.plugins.shared.sienna_osemosys_translations.reservoirs import (
+    build_reservoir_sources,
+)
 from interop.plugins.shared.sienna_osemosys_translations.series import find_series_window
 from interop.plugins.shared.sienna_osemosys_translations.sets import set_derived_set_tables
 from interop.plugins.shared.sienna_osemosys_translations.storage_tables import (
@@ -61,6 +64,7 @@ __all__ = [
     "build_demand_sources",
     "build_generator_sources",
     "build_model_years",
+    "build_reservoir_sources",
     "build_storage_sources",
     "find_series_window",
     "list_bus_members",
