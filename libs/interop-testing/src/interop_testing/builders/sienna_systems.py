@@ -721,6 +721,27 @@ class SiennaSystemBuilder:
             }
         )
 
+    def _reservoir_by_name(self, name: str) -> dict[str, Any]:
+        for reservoir in self._reservoirs:
+            if reservoir["name"] == name:
+                return reservoir
+        raise KeyError(f"no reservoir {name!r} added yet")
+
+    def set_reservoir_field(self, name: str, field: str, value: Any) -> None:
+        """Set one field of a HydroReservoir that the add call does not take."""
+        self._check_not_saved(f"{field} for HydroReservoir {name!r}")
+        self._reservoir_by_name(name)[field] = value
+
+    def add_reservoir_turbine(self, name: str, turbine: str) -> None:
+        """Name one HydroTurbine among the downstream turbines of a HydroReservoir."""
+        self._check_not_saved(f"downstream turbine {turbine!r} for HydroReservoir {name!r}")
+        reservoir = self._reservoir_by_name(name)
+        turbine_id = self._generator_by_name(turbine)["id"]
+        downstream = reservoir.setdefault("downstream_turbines", [])
+        if turbine_id in downstream:
+            raise KeyError(f"HydroReservoir {name!r} already feeds {turbine!r}")
+        downstream.append(turbine_id)
+
     def add_unknown_component(self, type_name: str, name: str) -> None:
         """Add a row under a type name that SiennaSchemas does not define."""
         self._check_not_saved(f"{type_name} {name!r}")

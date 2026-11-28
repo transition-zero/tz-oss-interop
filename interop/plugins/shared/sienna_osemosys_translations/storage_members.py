@@ -14,12 +14,14 @@ from typing import NamedTuple
 from interop.plugins.shared.sienna_osemosys_translations.constants import NAME_SEPARATOR
 from interop.ports.outbound.reporting import SourceField
 
-# What a warning of this group counts.
+# What a warning of the storage group counts, and what one of the reservoir group counts.
 STORAGE_COUNTED_NOUN = "storage(s)"
+RESERVOIR_COUNTED_NOUN = "reservoir(s)"
 
-# The part that the name of a technology of this group takes after the name of its storage.
+# The part that the name of an invented technology takes after the name of its storage.
 CHARGE_NAME_PART = "charge"
 DISCHARGE_NAME_PART = "discharge"
+INFLOW_NAME_PART = "inflow"
 # The one operating mode of a technology that this group writes, which OSeMOSYS numbers from 1.
 FIRST_MODE = "1"
 # The storage link of such a technology: one unit of its activity moves one MWh of the energy.
@@ -60,3 +62,8 @@ def build_charge_technology(storage: str) -> str:
 def build_discharge_technology(storage: str) -> str:
     """The name of the technology that discharges one storage."""
     return f"{storage}{NAME_SEPARATOR}{DISCHARGE_NAME_PART}"
+
+
+def build_inflow_technology(storage: str) -> str:
+    """The name of the technology that puts the inflow of one reservoir into its storage."""
+    return f"{storage}{NAME_SEPARATOR}{INFLOW_NAME_PART}"

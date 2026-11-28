@@ -21,6 +21,7 @@ from interop.plugins.steps.sienna_to_osemosys.map_buses import map_buses
 from interop.plugins.steps.sienna_to_osemosys.map_calendar import map_calendar
 from interop.plugins.steps.sienna_to_osemosys.map_demands import map_demands
 from interop.plugins.steps.sienna_to_osemosys.map_generators import map_generators
+from interop.plugins.steps.sienna_to_osemosys.map_reservoirs import map_reservoirs
 from interop.plugins.steps.sienna_to_osemosys.map_storages import map_storages
 
 _MAP_BUSES = "sienna_to_osemosys_map_buses"
@@ -28,6 +29,7 @@ _MAP_CALENDAR = "sienna_to_osemosys_map_calendar"
 _MAP_DEMANDS = "sienna_to_osemosys_map_demands"
 _MAP_GENERATORS = "sienna_to_osemosys_map_generators"
 _MAP_STORAGES = "sienna_to_osemosys_map_storages"
+_MAP_RESERVOIRS = "sienna_to_osemosys_map_reservoirs"
 _MAP_FRAME = "sienna_to_osemosys_map_frame"
 
 
@@ -45,8 +47,11 @@ class SiennaToOsemosysMapComponents(TranslationStep):
         mapped = map_calendar(state, self._scoped(_MAP_CALENDAR), reader)
         hours = build_calendar_hours(state, mapped.calendar)
         map_demands(state, self._scoped(_MAP_DEMANDS), reader, hours, mapped.years)
-        map_generators(state, self._scoped(_MAP_GENERATORS), reader, hours, mapped.years)
+        generators = map_generators(
+            state, self._scoped(_MAP_GENERATORS), reader, hours, mapped.years
+        )
         map_storages(state, self._scoped(_MAP_STORAGES), reader, mapped.years)
+        map_reservoirs(state, self._scoped(_MAP_RESERVOIRS), generators, mapped.years)
         return state
 
     def _map_frame(self, state: State) -> None:
